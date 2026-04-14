@@ -1,33 +1,20 @@
-# database/schema.py
 import re
 import unicodedata
 
 
 def normalize_col_name(name: str) -> str:
-    """
-    Converte nomes de colunas vindos da planilha em nomes seguros para SQL.
-    Ex:
-      'Código do Item' -> 'codigo_do_item'
-      'Saldo Atual' -> 'saldo_atual'
-    """
     if name is None:
         return "coluna"
 
     s = str(name).strip()
-
-    # Remove acentos
     s = unicodedata.normalize("NFKD", s)
     s = "".join(ch for ch in s if not unicodedata.combining(ch))
-
-    # Lower + troca separadores por underscore
     s = s.lower()
     s = re.sub(r"[^a-z0-9]+", "_", s)
     s = s.strip("_")
 
     if not s:
         s = "coluna"
-
-    # Não deixar começar com número
     if s[0].isdigit():
         s = f"c_{s}"
 
@@ -35,32 +22,31 @@ def normalize_col_name(name: str) -> str:
 
 
 def quote_ident(ident: str) -> str:
-    """
-    Coloca aspas duplas em identificadores SQL, escapando aspas internas.
-    """
     ident = str(ident)
     return '"' + ident.replace('"', '""') + '"'
 
 
 def ensure_schema(conn):
-    """
-    Cria as tabelas necessárias caso não existam.
-    As tabelas de planilha seguem o nome definido pelo projeto:
-      - "NCM E CEST"
-      - "Estoque"
-      - "notas"
-    """
     cur = conn.cursor()
 
-    # Empresa
+    # ── Empresa ────────────────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS empresa (
-            codigo TEXT PRIMARY KEY,
-            nome   TEXT NOT NULL
+            codigo           TEXT PRIMARY KEY,
+            nome             TEXT NOT NULL,
+            simples_nacional TEXT NOT NULL DEFAULT 'Não'
         )
     """)
 
-    # Definição das tabelas e colunas (baseado nas planilhas)
+    # ✅ MIGRAÇÃO (resolve exatamente o seu erro)
+    try:
+        cur.execute(
+            "ALTER TABLE empresa ADD COLUMN simples_nacional TEXT NOT NULL DEFAULT 'Não'"
+        )
+    except Exception:
+        pass  # já existe
+
+    # ── Tabelas de planilha ────────────────────────────────────────────────
     table_specs = {
         "NCM E CEST": [
             "Código do Item",
@@ -132,21 +118,20 @@ def ensure_schema(conn):
     }
 
     for table_name, columns in table_specs.items():
-        # Coluna de vínculo com a empresa + id interno opcional
         col_defs = [
             f'{quote_ident("id")} INTEGER PRIMARY KEY AUTOINCREMENT',
             f'{quote_ident("empresa_codigo")} TEXT NOT NULL',
         ]
 
-        # Aqui está a parte que estava quebrando: SEM \" e com aspas corretas
         for col in columns:
             col_sql = normalize_col_name(col)
             col_defs.append(f'{quote_ident(col_sql)} TEXT')
 
-        sql = f"CREATE TABLE IF NOT EXISTS {quote_ident(table_name)} ({', '.join(col_defs)})"
-        cur.execute(sql)
+        cur.execute(
+            f"CREATE TABLE IF NOT EXISTS {quote_ident(table_name)} "
+            f"({', '.join(col_defs)})"
+        )
 
-        # Índice para acelerar DELETE/SELECT por empresa
         idx_name = f"idx_{normalize_col_name(table_name)}_empresa"
         cur.execute(
             f"CREATE INDEX IF NOT EXISTS {quote_ident(idx_name)} "

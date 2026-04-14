@@ -1,78 +1,76 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-
+from services.gerar import gerar_excel_notas
 from database.db import get_conn
 from importers.db_importer import import_planilha
 
 PLANILHAS = ["NCM E CEST", "Estoque", "notas"]
 
-# Colunas originais das notas (para exibir cabeçalho legível)
 NOTAS_COLS = [
-    ("empresa_codigo",              "Empresa"),
-    ("codigo_da_loja",              "Cód. Loja"),
-    ("codigo_do_fornecedor",        "Cód. Fornecedor"),
-    ("nome_do_fornecedor",          "Nome Fornecedor"),
-    ("numero_do_documento",         "Nº Documento"),
-    ("codigo_da_operacao",          "Cód. Operação"),
-    ("operacao",                    "Operação"),
-    ("situacao",                    "Situação"),
-    ("data_de_emissao",             "Data Emissão"),
-    ("data_de_entrada",             "Data Entrada"),
-    ("frete",                       "Frete"),
-    ("outros",                      "Outros"),
-    ("seguro",                      "Seguro"),
-    ("desconto",                    "Desconto"),
-    ("ipi",                         "IPI"),
-    ("dae",                         "DAE"),
-    ("icms_desonerado",             "ICMS Desonerado"),
-    ("fecop",                       "FECOP"),
-    ("valor_fecopst",               "Valor FECOPST"),
-    ("fecop_retido",                "FECOP Retido"),
-    ("base_de_calculo_icms",        "BC ICMS"),
-    ("valor_bc_do_icms",            "Valor BC ICMS"),
-    ("base_de_calculo_icmsst",      "BC ICMSST"),
-    ("valor_bc_icmsst",             "Valor BC ICMSST"),
-    ("valor_total",                 "Valor Total"),
-    ("codigo_do_produto",           "Cód. Produto"),
-    ("descricao_produto",           "Descrição Produto"),
-    ("unidade_de_medida",           "Unidade"),
-    ("quantidade_de_itens_na_unidade", "Qtd Un."),
-    ("quantidade_de_itens",         "Qtd Itens"),
-    ("cfop",                        "CFOP"),
-    ("frete_do_item",               "Frete Item"),
-    ("seguro_do_item",              "Seguro Item"),
-    ("desconto_do_item",            "Desconto Item"),
-    ("ipi_do_item",                 "IPI Item"),
-    ("base_de_calculo_do_icms_do_item", "BC ICMS Item"),
-    ("icms_do_item",                "ICMS Item"),
+    ("empresa_codigo",                     "Empresa"),
+    ("codigo_da_loja",                     "Cód. Loja"),
+    ("codigo_do_fornecedor",               "Cód. Fornecedor"),
+    ("nome_do_fornecedor",                 "Nome Fornecedor"),
+    ("numero_do_documento",                "Nº Documento"),
+    ("codigo_da_operacao",                 "Cód. Operação"),
+    ("operacao",                           "Operação"),
+    ("situacao",                           "Situação"),
+    ("data_de_emissao",                    "Data Emissão"),
+    ("data_de_entrada",                    "Data Entrada"),
+    ("frete",                              "Frete"),
+    ("outros",                             "Outros"),
+    ("seguro",                             "Seguro"),
+    ("desconto",                           "Desconto"),
+    ("ipi",                                "IPI"),
+    ("dae",                                "DAE"),
+    ("icms_desonerado",                    "ICMS Desonerado"),
+    ("fecop",                              "FECOP"),
+    ("valor_fecopst",                      "Valor FECOPST"),
+    ("fecop_retido",                       "FECOP Retido"),
+    ("base_de_calculo_icms",               "BC ICMS"),
+    ("valor_bc_do_icms",                   "Valor BC ICMS"),
+    ("base_de_calculo_icmsst",             "BC ICMSST"),
+    ("valor_bc_icmsst",                    "Valor BC ICMSST"),
+    ("valor_total",                        "Valor Total"),
+    ("codigo_do_produto",                  "Cód. Produto"),
+    ("descricao_produto",                  "Descrição Produto"),
+    ("unidade_de_medida",                  "Unidade"),
+    ("quantidade_de_itens_na_unidade",     "Qtd Un."),
+    ("quantidade_de_itens",                "Qtd Itens"),
+    ("cfop",                               "CFOP"),
+    ("frete_do_item",                      "Frete Item"),
+    ("seguro_do_item",                     "Seguro Item"),
+    ("desconto_do_item",                   "Desconto Item"),
+    ("ipi_do_item",                        "IPI Item"),
+    ("base_de_calculo_do_icms_do_item",    "BC ICMS Item"),
+    ("icms_do_item",                       "ICMS Item"),
     ("base_de_calculo_do_icms_st_do_item", "BC ICMSST Item"),
-    ("icms_st_do_item",             "ICMSST Item"),
-    ("dae_item",                    "DAE Item"),
-    ("icms_desonerado_do_item",     "ICMS Desonerado Item"),
-    ("icms_antecipado_do_item",     "ICMS Antecipado Item"),
-    ("fecop_do_item",               "FECOP Item"),
-    ("fecop_st_do_item",            "FECOP ST Item"),
-    ("fecop_retido_do_item",        "FECOP Retido Item"),
-    ("valor_unitario",              "Valor Unitário"),
-    ("outras_despesas_do_item",     "Outras Despesas"),
-    ("valor_total_do_item",         "Valor Total Item"),
-    ("posicao_na_nf",               "Posição NF"),
-    ("chave_nfe",                   "Chave NFe"),
+    ("icms_st_do_item",                    "ICMSST Item"),
+    ("dae_item",                           "DAE Item"),
+    ("icms_desonerado_do_item",            "ICMS Desonerado Item"),
+    ("icms_antecipado_do_item",            "ICMS Antecipado Item"),
+    ("fecop_do_item",                      "FECOP Item"),
+    ("fecop_st_do_item",                   "FECOP ST Item"),
+    ("fecop_retido_do_item",               "FECOP Retido Item"),
+    ("valor_unitario",                     "Valor Unitário"),
+    ("outras_despesas_do_item",            "Outras Despesas"),
+    ("valor_total_do_item",                "Valor Total Item"),
+    ("posicao_na_nf",                      "Posição NF"),
+    ("chave_nfe",                          "Chave NFe"),
 ]
 
-# Filtros disponíveis na consulta de notas
 NOTAS_FILTROS = [
-    ("empresa_codigo",       "Empresa"),
-    ("codigo_da_loja",       "Cód. Loja"),
-    ("nome_do_fornecedor",   "Nome Fornecedor"),
-    ("numero_do_documento",  "Nº Documento"),
-    ("operacao",             "Operação"),
-    ("situacao",             "Situação"),
-    ("data_de_emissao",      "Data Emissão"),
-    ("data_de_entrada",      "Data Entrada"),
-    ("cfop",                 "CFOP"),
-    ("codigo_do_produto",    "Cód. Produto"),
-    ("descricao_produto",    "Descrição Produto"),
+    ("empresa_codigo",      "Empresa"),
+    ("codigo_da_loja",      "Cód. Loja"),
+    ("nome_do_fornecedor",  "Nome Fornecedor"),
+    ("numero_do_documento", "Nº Documento"),
+    ("operacao",            "Operação"),
+    ("situacao",            "Situação"),
+    ("data_de_emissao",     "Data Emissão"),
+    ("data_de_entrada",     "Data Entrada"),
+    ("cfop",                "CFOP"),
+    ("codigo_do_produto",   "Cód. Produto"),
+    ("descricao_produto",   "Descrição Produto"),
 ]
 
 
@@ -97,9 +95,19 @@ class TelaCadastro(ttk.Frame):
         self.ent_nome = ttk.Entry(self, width=45)
         self.ent_nome.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=4)
 
-        ttk.Button(self, text="💾  Salvar empresa", command=self._salvar).grid(
-            row=3, column=1, sticky="w", padx=(8, 0), pady=12
-        )
+        ttk.Label(self, text="Simples Nacional?").grid(row=3, column=0, sticky="w")
+        self.simples_var = tk.StringVar(value="Não")
+        ttk.Combobox(
+            self, textvariable=self.simples_var,
+            values=["Sim", "Não"], state="readonly", width=10
+        ).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=4)
+
+        # Botões salvar / editar / carregar
+        btn_frame = ttk.Frame(self)
+        btn_frame.grid(row=1, column=2, rowspan=3, padx=12, sticky="ns")
+        ttk.Button(btn_frame, text="💾 Salvar empresa",   command=self._salvar).pack(fill="x", pady=(0, 4))
+        ttk.Button(btn_frame, text="✏️ Salvar Edição",   command=self._editar).pack(fill="x", pady=(0, 4))
+        ttk.Button(btn_frame, text="🔃 Carregar seleção", command=self._carregar_selecao).pack(fill="x")
 
         ttk.Separator(self, orient="horizontal").grid(
             row=4, column=0, columnspan=3, sticky="ew", pady=10
@@ -115,41 +123,89 @@ class TelaCadastro(ttk.Frame):
         self.grid_rowconfigure(6, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        self.tree = ttk.Treeview(frame_tree, columns=("codigo", "nome"), show="headings", height=12)
-        self.tree.heading("codigo", text="Código")
-        self.tree.heading("nome", text="Nome")
-        self.tree.column("codigo", width=120)
-        self.tree.column("nome", width=400)
+        self.tree = ttk.Treeview(
+            frame_tree,
+            columns=("codigo", "nome", "simples"),
+            show="headings", height=12
+        )
+        self.tree.heading("codigo",  text="Código")
+        self.tree.heading("nome",    text="Nome")
+        self.tree.heading("simples", text="Simples Nacional?")
+        self.tree.column("codigo",  width=100)
+        self.tree.column("nome",    width=380)
+        self.tree.column("simples", width=130, anchor="center")
 
         sb = ttk.Scrollbar(frame_tree, orient="vertical", command=self.tree.yview)
         self.tree.configure(yscrollcommand=sb.set)
         self.tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
+        # Clique na linha preenche os campos automaticamente
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
+
         self._carregar()
 
     def _carregar(self):
         self.tree.delete(*self.tree.get_children())
         with get_conn() as conn:
-            rows = conn.execute("SELECT codigo, nome FROM empresa ORDER BY codigo").fetchall()
+            rows = conn.execute(
+                "SELECT codigo, nome, simples_nacional FROM empresa ORDER BY codigo"
+            ).fetchall()
         for r in rows:
-            self.tree.insert("", "end", values=(r[0], r[1]))
+            self.tree.insert("", "end", values=(r[0], r[1], r[2]))
+
+    def _on_tree_select(self, _event=None):
+        sel = self.tree.selection()
+        if not sel:
+            return
+        vals = self.tree.item(sel[0], "values")
+        self.ent_codigo.delete(0, "end")
+        self.ent_codigo.insert(0, vals[0])
+        self.ent_nome.delete(0, "end")
+        self.ent_nome.insert(0, vals[1])
+        self.simples_var.set(vals[2])
+
+    def _carregar_selecao(self):
+        self._on_tree_select()
 
     def _salvar(self):
-        codigo = self.ent_codigo.get().strip()
-        nome = self.ent_nome.get().strip()
+        codigo  = self.ent_codigo.get().strip()
+        nome    = self.ent_nome.get().strip()
+        simples = self.simples_var.get()
         if not codigo or not nome:
             messagebox.showwarning("Atenção", "Informe código e nome.")
             return
         try:
             with get_conn() as conn:
-                conn.execute("INSERT INTO empresa(codigo, nome) VALUES(?,?)", (codigo, nome))
+                conn.execute(
+                    "INSERT INTO empresa(codigo, nome, simples_nacional) VALUES(?,?,?)",
+                    (codigo, nome, simples)
+                )
             self.ent_codigo.delete(0, "end")
             self.ent_nome.delete(0, "end")
+            self.simples_var.set("Não")
             self._carregar()
             messagebox.showinfo("OK", "Empresa cadastrada com sucesso!")
         except Exception as e:
             messagebox.showerror("Erro", f"Não foi possível cadastrar.\n\n{e}")
+
+    def _editar(self):
+        codigo  = self.ent_codigo.get().strip()
+        nome    = self.ent_nome.get().strip()
+        simples = self.simples_var.get()
+        if not codigo or not nome:
+            messagebox.showwarning("Atenção", "Informe código e nome.")
+            return
+        try:
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE empresa SET nome = ?, simples_nacional = ? WHERE codigo = ?",
+                    (nome, simples, codigo)
+                )
+            self._carregar()
+            messagebox.showinfo("OK", "Empresa atualizada com sucesso!")
+        except Exception as e:
+            messagebox.showerror("Erro", f"Não foi possível editar.\n\n{e}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,7 +223,6 @@ class TelaImportacao(ttk.Frame):
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 16)
         )
 
-        # Seleção de empresa
         ttk.Label(self, text="Empresa:").grid(row=1, column=0, sticky="w")
         self.cbo = ttk.Combobox(self, textvariable=self.empresa_var, state="readonly", width=45)
         self.cbo.grid(row=1, column=1, sticky="w", padx=(8, 0))
@@ -177,7 +232,6 @@ class TelaImportacao(ttk.Frame):
             row=2, column=0, columnspan=3, sticky="ew", pady=14
         )
 
-        # Seleção de arquivos
         for i, plan in enumerate(PLANILHAS):
             r = 3 + i
             ttk.Label(self, text=f"{plan}:").grid(row=r, column=0, sticky="w", pady=5)
@@ -197,7 +251,6 @@ class TelaImportacao(ttk.Frame):
             command=self._importar
         ).grid(row=7, column=0, columnspan=3, sticky="ew", ipady=6)
 
-        # Log
         self.lbl_log = ttk.Label(self, text="", foreground="green")
         self.lbl_log.grid(row=8, column=0, columnspan=3, sticky="w", pady=8)
 
@@ -206,7 +259,6 @@ class TelaImportacao(ttk.Frame):
     def _load_empresas(self):
         with get_conn() as conn:
             rows = conn.execute("SELECT codigo, nome FROM empresa ORDER BY codigo").fetchall()
-        self._empresas = rows
         self.cbo["values"] = [f"{c} - {n}" for c, n in rows]
         if self.cbo["values"] and not self.empresa_var.get():
             self.cbo.current(0)
@@ -249,10 +301,7 @@ class TelaImportacao(ttk.Frame):
 # Tela: Consulta genérica (NCM e Estoque)
 # ─────────────────────────────────────────────────────────────────────────────
 class TelaConsultaSimples(ttk.Frame):
-    def __init__(self, master, table_name: str, cols: list[tuple]):
-        """
-        cols: lista de (col_sql, label)
-        """
+    def __init__(self, master, table_name: str, cols: list):
         super().__init__(master, padding=10)
         self.table_name = table_name
         self.cols = cols
@@ -275,11 +324,10 @@ class TelaConsultaSimples(ttk.Frame):
         self.lbl_total = ttk.Label(top, text="")
         self.lbl_total.pack(side="left", padx=10)
 
-        # Treeview
         frame = ttk.Frame(self)
         frame.pack(fill="both", expand=True, pady=8)
 
-        col_ids = [c[0] for c in self.cols]
+        col_ids    = [c[0] for c in self.cols]
         col_labels = [c[1] for c in self.cols]
 
         self.tree = ttk.Treeview(frame, columns=col_ids, show="headings")
@@ -287,11 +335,11 @@ class TelaConsultaSimples(ttk.Frame):
             self.tree.heading(cid, text=lbl)
             self.tree.column(cid, width=110, minwidth=60)
 
-        sb_y = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        sb_y = ttk.Scrollbar(frame, orient="vertical",   command=self.tree.yview)
         sb_x = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
         self.tree.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
 
-        sb_y.pack(side="right", fill="y")
+        sb_y.pack(side="right",  fill="y")
         sb_x.pack(side="bottom", fill="x")
         self.tree.pack(fill="both", expand=True)
 
@@ -309,10 +357,10 @@ class TelaConsultaSimples(ttk.Frame):
         if not empresa:
             messagebox.showwarning("Atenção", "Selecione uma empresa.")
             return
-        codigo = empresa.split(" - ", 1)[0].strip()
-        col_ids = [c[0] for c in self.cols]
+        codigo   = empresa.split(" - ", 1)[0].strip()
+        col_ids  = [c[0] for c in self.cols]
         cols_sql = ", ".join([f'"{c}"' for c in col_ids])
-        tbl = '"' + self.table_name.replace('"', '""') + '"'
+        tbl      = '"' + self.table_name.replace('"', '""') + '"'
 
         with get_conn() as conn:
             rows = conn.execute(
@@ -331,7 +379,8 @@ class TelaConsultaSimples(ttk.Frame):
 class TelaConsultaNotas(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=10)
-        self._filtros_vars = {}
+        self._filtros_vars  = {}
+        self._empresas_map  = {}
         self._build()
 
     def _build(self):
@@ -344,7 +393,6 @@ class TelaConsultaNotas(ttk.Frame):
         frm_filtros.pack(fill="x", pady=(0, 8))
 
         cols_por_linha = 3
-
         for i, (col_sql, label) in enumerate(NOTAS_FILTROS):
             row = i // cols_por_linha
             col = (i % cols_por_linha) * 2
@@ -353,17 +401,15 @@ class TelaConsultaNotas(ttk.Frame):
                 row=row, column=col, sticky="w", padx=(10, 2), pady=3
             )
 
-            # Campo Empresa vira Combobox, os demais permanecem Entry
+            var = tk.StringVar()
+            self._filtros_vars[col_sql] = var
+
             if col_sql == "empresa_codigo":
-                var = tk.StringVar()
-                self._filtros_vars[col_sql] = var
                 self.cbo_empresa = ttk.Combobox(
                     frm_filtros, textvariable=var, state="readonly", width=20
                 )
                 self.cbo_empresa.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
             else:
-                var = tk.StringVar()
-                self._filtros_vars[col_sql] = var
                 ttk.Entry(frm_filtros, textvariable=var, width=22).grid(
                     row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3
                 )
@@ -375,8 +421,8 @@ class TelaConsultaNotas(ttk.Frame):
             column=0, columnspan=6, sticky="w", pady=(8, 0), padx=10
         )
         ttk.Button(btn_frame, text="🔄 Atualizar empresas", command=self._load_empresas).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_frame, text="🔍 Filtrar", command=self._consultar).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_frame, text="🧹 Limpar filtros", command=self._limpar).pack(side="left")
+        ttk.Button(btn_frame, text="🔍 Filtrar",            command=self._consultar).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_frame, text="🧹 Limpar filtros",     command=self._limpar).pack(side="left")
         self.lbl_total = ttk.Label(btn_frame, text="")
         self.lbl_total.pack(side="left", padx=16)
 
@@ -400,7 +446,6 @@ class TelaConsultaNotas(ttk.Frame):
         sb_x.pack(side="bottom", fill="x")
         self.tree.pack(fill="both", expand=True)
 
-        # Carrega empresas ao iniciar
         self._load_empresas()
 
     def _load_empresas(self):
@@ -421,15 +466,13 @@ class TelaConsultaNotas(ttk.Frame):
         cols_sql = ", ".join([f'"{c}"' for c in col_ids])
 
         where_parts = []
-        params = []
+        params      = []
 
         for col_sql, var in self._filtros_vars.items():
             val = var.get().strip()
             if not val or val == "(Todas)":
                 continue
-
             if col_sql == "empresa_codigo":
-                # Pega o código real do mapa (ex: "001 - Nome" → "001")
                 codigo = self._empresas_map.get(val)
                 if codigo:
                     where_parts.append(f'"{col_sql}" = ?')
@@ -485,6 +528,7 @@ class App(tk.Tk):
             ("📦  Consulta NCM",     self._show_ncm),
             ("🗂️  Consulta Estoque", self._show_estoque),
             ("🧾  Consulta Notas",   self._show_notas),
+            ("📤  Gerar Excel", self._gerar_excel),
         ]
 
         for label, cmd in menus:
@@ -500,16 +544,17 @@ class App(tk.Tk):
         self.content = tk.Frame(self, bg="#f4f6f8")
         self.content.pack(side="left", fill="both", expand=True)
 
-        # Instancia as telas
         self._telas = {
             "cadastro":   TelaCadastro(self.content),
             "importacao": TelaImportacao(self.content),
             "ncm":        TelaConsultaSimples(self.content, "NCM E CEST", [
+                ("empresa_codigo", "Empresa"),
                 ("codigo_do_item", "Cód. Item"),
                 ("ncm",            "NCM"),
                 ("cest",           "CEST"),
             ]),
             "estoque":    TelaConsultaSimples(self.content, "Estoque", [
+                ("empresa_codigo", "Empresa"),
                 ("quebra",         "Quebra"),
                 ("produto",        "Produto"),
                 ("descricao",      "Descrição"),
@@ -535,3 +580,55 @@ class App(tk.Tk):
     def _show_ncm(self):        self._show("ncm")
     def _show_estoque(self):    self._show("estoque")
     def _show_notas(self):      self._show("notas")
+
+    def _gerar_excel(self):
+        # pegar empresas do banco
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT codigo, nome FROM empresa ORDER BY codigo"
+            ).fetchall()
+
+        if not rows:
+            messagebox.showwarning("Atenção", "Nenhuma empresa cadastrada.")
+            return
+
+        # criar lista para seleção
+        opcoes = [f"{c} - {n}" for c, n in rows]
+
+        # janelinha simples de seleção
+        win = tk.Toplevel(self)
+        win.title("Selecionar Empresa")
+        win.geometry("350x120")
+
+        ttk.Label(win, text="Escolha a empresa:").pack(pady=10)
+
+        empresa_var = tk.StringVar()
+        cbo = ttk.Combobox(win, textvariable=empresa_var, values=opcoes, state="readonly", width=40)
+        cbo.pack()
+        cbo.current(0)
+
+        def confirmar():
+            selecao = empresa_var.get()
+            if not selecao:
+                return
+
+            codigo = selecao.split(" - ")[0]
+
+            # escolher onde salvar
+            caminho = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel", "*.xlsx")],
+                title="Salvar arquivo"
+            )
+
+            if not caminho:
+                return
+
+            try:
+                gerar_excel_notas(codigo, caminho)
+                messagebox.showinfo("Sucesso", f"Arquivo gerado:\n{caminho}")
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("Erro", str(e))
+
+        ttk.Button(win, text="Gerar", command=confirmar).pack(pady=10)
