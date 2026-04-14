@@ -1,12 +1,12 @@
 # Importador SQLite (Tkinter)
 
-## O que faz
+## O que faz?
 - Cadastro simples de empresas (codigo e nome)
 - Seleciona empresa
 - Importa 3 planilhas (2 xlsx e 1 csv) e grava no SQLite
 - Para cada importação: **substitui** os dados daquela empresa na tabela correspondente (DELETE + INSERT)
 
-## Como rodar
+## Como rodar?
 1. Crie e ative um venv (opcional, recomendado)
 2. Instale dependências:
 ```bash
