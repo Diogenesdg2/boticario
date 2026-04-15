@@ -478,43 +478,44 @@ class TelaConsultaEstoque(ttk.Frame):
         self.cbo_empresa.current(0)
 
     def _consultar(self):
-        where_parts = []
-        params = []
+            where_parts = []
+            params = []
 
-        for col_sql, var in self._filtros_vars.items():
-            val = var.get().strip()
+            for col_sql, var in self._filtros_vars.items():
+                val = var.get().strip()
 
-            if not val or val == "(Todas)":
-                continue
+                if not val or val == "(Todas)":
+                    continue
 
-            if col_sql == "empresa_codigo":
-                codigo = self._empresas_map.get(val)
-                if codigo:
-                    where_parts.append(f'"{col_sql}" = ?')
-                    params.append(codigo)
-            else:
-                where_parts.append(f'"{col_sql}" LIKE ?')
-                params.append(f"%{val}%")
+                if col_sql == "empresa_codigo":
+                    codigo = self._empresas_map.get(val)
+                    if codigo:
+                        where_parts.append(f'"{col_sql}" = ?')
+                        params.append(codigo)
+                else:
+                    where_parts.append(f'"{col_sql}" LIKE ?')
+                    params.append(f"%{val}%")
 
-        where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+            where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
-        with get_conn() as conn:
-            cursor = conn.execute(f'SELECT * FROM "Estoque" {where}', params)
-            rows = cursor.fetchall()
-            colunas = [desc[0] for desc in cursor.description]  # ✅ pega do banco
+            with get_conn() as conn:
+                cursor = conn.execute(f'SELECT * FROM "Estoque" {where}', params)
+                rows = cursor.fetchall()
+                colunas = [desc[0] for desc in cursor.description]  # ✅ pega do banco
 
-        self.tree.delete(*self.tree.get_children())
+            self.tree.delete(*self.tree.get_children())
 
-        self.tree["columns"] = colunas
+            self.tree["columns"] = colunas
 
-        for c in colunas:
-            self.tree.heading(c, text=c)
-            self.tree.column(c, width=120)
+            for c in colunas:
+                self.tree.heading(c, text=c)
+                self.tree.column(c, width=120)
 
-        for r in rows:
-            self.tree.insert("", "end", values=r)
+            for r in rows:
+                self.tree.insert("", "end", values=r)
 
-        self.lbl_total.config(text=f"{len(rows)} registros")
+            self.lbl_total.config(text=f"{len(rows)} registros")
+        
 # ─────────────────────────────────────────────────────────────────────────────
 # Tela: Consulta de Notas (com filtros)
 # ─────────────────────────────────────────────────────────────────────────────

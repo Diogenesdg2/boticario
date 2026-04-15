@@ -66,9 +66,10 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
     with get_conn() as conn:
         estoque_df = pd.read_sql_query(
             '''
-            SELECT produto, saldo_atual
+            SELECT produto, descricao, saldo_atual
             FROM "Estoque"
             WHERE empresa_codigo = ?
+            AND saldo_atual > 0
             ''',
             conn,
             params=(empresa_codigo,)
@@ -101,7 +102,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             conn
         )
 
-    # ✅ garante posição como número
     if "posicao_na_nf" in notas_df.columns:
         notas_df["posicao_na_nf"] = pd.to_numeric(
             notas_df["posicao_na_nf"], errors="coerce"
@@ -122,20 +122,19 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
     for _, est in estoque_df.iterrows():
         produto = est["produto"]
+        descricao_estoque = est.get("descricao", "")
         produto_norm = est["produto_norm"]
         saldo = to_float(est["saldo_atual"])
 
-        if saldo <= 0:
-            continue
-
         notas_prod = grupos_notas.get(produto_norm)
 
+        # ✅ PRODUTO SEM QUALQUER NOTA
         if notas_prod is None or notas_prod.empty:
             resultado.append({
                 "produto": produto,
-                "descricao": "",
+                "descricao": descricao_estoque,
                 "emitente": "",
-                "numero": "",
+                "numero": "Nota não encontrada",
                 "serie": "",
                 "subserie": "",
                 "data_emissao": "",
@@ -157,8 +156,20 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         )
 
         acumulado = 0.0
+        encontrou_nota_valida = False
 
         for _, nota in notas_prod.iterrows():
+
+            numero_nota = (
+                nota.get("numero_do_documento")
+                or nota.get("numero")
+                or nota.get("num_doc")
+            )
+
+            if not numero_nota:
+                continue  # ignora nota inválida
+
+            encontrou_nota_valida = True
 
             if acumulado >= saldo:
                 break
@@ -178,13 +189,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
             acumulado += qtd_utilizada
 
-            numero_nota = (
-                nota.get("numero_do_documento")
-                or nota.get("numero")
-                or nota.get("num_doc")
-                or ""
-            )
-
             unidade = (
                 nota.get("unidade_de_medida")
                 or nota.get("unidade")
@@ -194,7 +198,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
             resultado.append({
                 "produto": produto,
-                "descricao": nota.get("descricao_produto"),
+                "descricao": nota.get("descricao_produto") or descricao_estoque,
                 "emitente": nota.get("nome_do_fornecedor"),
                 "numero": numero_nota,
                 "serie": nota.get("serie"),
@@ -211,14 +215,32 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "unidade_medida": unidade
             })
 
+        # ✅ tinha notas, mas nenhuma válida
+        if not encontrou_nota_valida:
+            resultado.append({
+                "produto": produto,
+                "descricao": descricao_estoque,
+                "emitente": "",
+                "numero": "Nota não encontrada",
+                "serie": "",
+                "subserie": "",
+                "data_emissao": "",
+                "data_entrada": "",
+                "chave_acesso": "",
+                "posicao_na_nf": 0,
+                "quantidade_nota": 0,
+                "quantidade_utilizada": 0,
+                "acumulado": 0,
+                "estoque": saldo,
+                "cobriu_estoque": False,
+                "unidade_medida": ""
+            })
+
     df_final = pd.DataFrame(resultado)
 
     if df_final.empty:
         df_final.to_excel(caminho_saida, index=False, engine="openpyxl")
         return caminho_saida
-
-    if "posicao_na_nf" not in df_final.columns:
-        df_final["posicao_na_nf"] = 0
 
     df_final["produto_norm"] = df_final["produto"].apply(norm_codigo)
 
@@ -235,31 +257,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
     df_final["Alíquota"] = df_final["ncm_limpo"].apply(
         lambda x: buscar_aliquota_por_ncm(x, ncm_tab_df)
     )
-
-    colunas = [
-        "produto",
-        "descricao",
-        "emitente",
-        "numero",
-        "posicao_na_nf",
-        "serie",
-        "subserie",
-        "data_emissao",
-        "data_entrada",
-        "chave_acesso",
-        "quantidade_nota",
-        "quantidade_utilizada",
-        "acumulado",
-        "estoque",
-        "cobriu_estoque",
-        "Cod. Mercadoria estoque",
-        "NCM",
-        "CEST",
-        "unidade_medida",
-        "Alíquota"
-    ]
-
-    df_final = df_final[[c for c in colunas if c in df_final.columns]]
 
     df_final = df_final.sort_values(
         by=["produto", "data_entrada", "posicao_na_nf"],
@@ -288,11 +285,8 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
         valor_aliq = row[idx_aliq - 1].value
 
-        # vermelho
         if str(valor_aliq).strip() == "NCM não cadastrado":
             row[idx_aliq - 1].font = fonte_vermelha
-
-        # 🟡 amarelo robusto (qualquer formato de zero)
         elif aliquota_eh_zero(valor_aliq):
             row[idx_aliq - 1].fill = fill_amarelo
 
