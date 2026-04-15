@@ -1,9 +1,154 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from services.gerar import gerar_excel_notas
-from database.db import get_conn
-from importers.db_importer import import_planilha
+import tkinter as tk  
+from tkinter import ttk, filedialog, messagebox  
+from services.gerar import gerar_excel_notas  
+from database.db import get_conn  
+from importers.db_importer import import_planilha  
+from services.ncm import inserir_ncm, listar_ncm  # ✅ NOVO  
 
+PLANILHAS = ["NCM E CEST", "Estoque", "notas"]  
+
+# ─────────────────────────────────────────────────────────────────────────────  
+# ✅ NOVA TELA: Cadastro NCM  
+# ─────────────────────────────────────────────────────────────────────────────  
+class TelaCadastroNCM(ttk.Frame):
+    def __init__(self, master):
+        super().__init__(master, padding=20)
+        self._build()
+
+    def _build(self):
+        ttk.Label(self, text="Cadastro de NCM", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 10))
+
+        form = ttk.Frame(self)
+        form.pack(anchor="w", pady=10)
+
+        ttk.Label(form, text="NCM:").grid(row=0, column=0, sticky="w")
+        self.ent_ncm = ttk.Entry(form, width=20)
+        self.ent_ncm.grid(row=0, column=1, padx=5, pady=5)
+        self.ent_ncm.bind("<KeyRelease>", self._formatar_ncm)  # ✅ máscara
+
+        ttk.Label(form, text="Descrição:").grid(row=1, column=0, sticky="w")
+        self.ent_desc = ttk.Entry(form, width=40)
+        self.ent_desc.grid(row=1, column=1, padx=5, pady=5)
+
+        ttk.Label(form, text="Alíquota:").grid(row=2, column=0, sticky="w")
+        self.ent_aliq = ttk.Entry(form, width=10)
+        self.ent_aliq.grid(row=2, column=1, padx=5, pady=5)
+
+        # ✅ botões
+        btn_frame = ttk.Frame(self)
+        btn_frame.pack(anchor="w", pady=10)
+
+        ttk.Button(btn_frame, text="💾 Salvar", command=self._salvar).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="✏️ Editar", command=self._editar).pack(side="left", padx=5)
+
+        # ✅ tabela
+        self.tree = ttk.Treeview(self, columns=("id", "ncm", "desc", "aliq"), show="headings", height=10)
+        self.tree.heading("id", text="ID")
+        self.tree.heading("ncm", text="NCM")
+        self.tree.heading("desc", text="Descrição")
+        self.tree.heading("aliq", text="Alíquota")
+
+        self.tree.column("id", width=50)
+        self.tree.column("ncm", width=120)
+
+        self.tree.pack(fill="both", expand=True)
+
+        # ✅ seleção
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        self._carregar()
+
+    # ✅ máscara NCM (8 dígitos)
+    def _formatar_ncm(self, event=None):
+        valor = ''.join(filter(str.isdigit, self.ent_ncm.get()))
+        valor = valor[:8]  # máximo 8
+
+        # formata tipo: 1234.56.78 (opcional visual)
+        if len(valor) > 4:
+            valor = valor[:4] + '.' + valor[4:]
+        if len(valor) > 7:
+            valor = valor[:7] + '.' + valor[7:]
+
+        self.ent_ncm.delete(0, "end")
+        self.ent_ncm.insert(0, valor)
+
+    def _salvar(self):
+        try:
+            ncm = self.ent_ncm.get().replace(".", "")
+
+            if len(ncm) != 8:
+                messagebox.showwarning("Atenção", "NCM deve ter 8 dígitos.")
+                return
+
+            inserir_ncm(
+                ncm,
+                self.ent_desc.get(),
+                float(self.ent_aliq.get() or 0)
+            )
+
+            messagebox.showinfo("OK", "NCM cadastrado!")
+            self._limpar()
+            self._carregar()
+
+        except Exception as e:
+            messagebox.showerror("Erro", str(e))
+
+    def _editar(self):
+        sel = self.tree.selection()
+        if not sel:
+            messagebox.showwarning("Atenção", "Selecione um registro.")
+            return
+
+        try:
+            item = self.tree.item(sel[0])["values"]
+            id_ = item[0]
+
+            ncm = self.ent_ncm.get().replace(".", "")
+
+            if len(ncm) != 8:
+                messagebox.showwarning("Atenção", "NCM deve ter 8 dígitos.")
+                return
+
+            from database.db import get_conn
+            with get_conn() as conn:
+                conn.execute(
+                    "UPDATE ncm SET ncm=?, descricao=?, aliquota=? WHERE id=?",
+                    (ncm, self.ent_desc.get(), float(self.ent_aliq.get() or 0), id_)
+                )
+
+            messagebox.showinfo("OK", "NCM atualizado!")
+            self._limpar()
+            self._carregar()
+
+        except Exception as e:
+            messagebox.showerror("Erro", str(e))
+
+    def _carregar(self):
+        self.tree.delete(*self.tree.get_children())
+        for row in listar_ncm():
+            self.tree.insert("", "end", values=row)
+
+    def _on_select(self, event=None):
+        sel = self.tree.selection()
+        if not sel:
+            return
+
+        item = self.tree.item(sel[0])["values"]
+
+        self.ent_ncm.delete(0, "end")
+        self.ent_ncm.insert(0, item[1])
+
+        self.ent_desc.delete(0, "end")
+        self.ent_desc.insert(0, item[2])
+
+        self.ent_aliq.delete(0, "end")
+        self.ent_aliq.insert(0, item[3])
+
+    def _limpar(self):
+        self.ent_ncm.delete(0, "end")
+        self.ent_desc.delete(0, "end")
+        self.ent_aliq.delete(0, "end")
+        
 PLANILHAS = ["NCM E CEST", "Estoque", "notas"]
 
 NOTAS_COLS = [
@@ -510,7 +655,6 @@ class App(tk.Tk):
         self._build()
 
     def _build(self):
-        # ── Menu lateral ──────────────────────────────────────────────────
         sidebar = tk.Frame(self, bg="#1e3a5f", width=200)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
@@ -525,10 +669,11 @@ class App(tk.Tk):
         menus = [
             ("🏢  Cadastro",         self._show_cadastro),
             ("⬆️  Importação",       self._show_importacao),
+            ("🧩  Cadastro NCM",     self._show_cad_ncm),  # ✅ NOVO
             ("📦  Consulta NCM",     self._show_ncm),
             ("🗂️  Consulta Estoque", self._show_estoque),
             ("🧾  Consulta Notas",   self._show_notas),
-            ("📤  Gerar Excel", self._gerar_excel),
+            ("📤  Gerar Excel",      self._gerar_excel),
         ]
 
         for label, cmd in menus:
@@ -540,13 +685,13 @@ class App(tk.Tk):
             )
             btn.pack(fill="x")
 
-        # ── Área de conteúdo ──────────────────────────────────────────────
         self.content = tk.Frame(self, bg="#f4f6f8")
         self.content.pack(side="left", fill="both", expand=True)
 
         self._telas = {
             "cadastro":   TelaCadastro(self.content),
             "importacao": TelaImportacao(self.content),
+            "cad_ncm":    TelaCadastroNCM(self.content),  # ✅ NOVO
             "ncm":        TelaConsultaSimples(self.content, "NCM E CEST", [
                 ("empresa_codigo", "Empresa"),
                 ("codigo_do_item", "Cód. Item"),
@@ -580,9 +725,9 @@ class App(tk.Tk):
     def _show_ncm(self):        self._show("ncm")
     def _show_estoque(self):    self._show("estoque")
     def _show_notas(self):      self._show("notas")
+    def _show_cad_ncm(self):    self._show("cad_ncm")  # ✅ NOVO
 
     def _gerar_excel(self):
-        # pegar empresas do banco
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT codigo, nome FROM empresa ORDER BY codigo"
@@ -592,10 +737,8 @@ class App(tk.Tk):
             messagebox.showwarning("Atenção", "Nenhuma empresa cadastrada.")
             return
 
-        # criar lista para seleção
         opcoes = [f"{c} - {n}" for c, n in rows]
 
-        # janelinha simples de seleção
         win = tk.Toplevel(self)
         win.title("Selecionar Empresa")
         win.geometry("350x120")
@@ -614,7 +757,6 @@ class App(tk.Tk):
 
             codigo = selecao.split(" - ")[0]
 
-            # escolher onde salvar
             caminho = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
                 filetypes=[("Excel", "*.xlsx")],

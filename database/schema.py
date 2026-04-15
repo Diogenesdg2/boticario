@@ -1,5 +1,6 @@
 import re
 import unicodedata
+from services.ncm import criar_tabela_ncm
 
 
 def normalize_col_name(name: str) -> str:
@@ -29,7 +30,7 @@ def quote_ident(ident: str) -> str:
 def ensure_schema(conn):
     cur = conn.cursor()
 
-    # ── Empresa ────────────────────────────────────────────────────────────
+    # ── Empresa ─────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS empresa (
             codigo           TEXT PRIMARY KEY,
@@ -38,15 +39,15 @@ def ensure_schema(conn):
         )
     """)
 
-    # ✅ MIGRAÇÃO (resolve exatamente o seu erro)
+    # MIGRAÇÃO (caso já exista sem a coluna)
     try:
         cur.execute(
             "ALTER TABLE empresa ADD COLUMN simples_nacional TEXT NOT NULL DEFAULT 'Não'"
         )
     except Exception:
-        pass  # já existe
+        pass
 
-    # ── Tabelas de planilha ────────────────────────────────────────────────
+    # ── Tabelas de planilha ─────────────────────────────
     table_specs = {
         "NCM E CEST": [
             "Código do Item",
@@ -139,3 +140,6 @@ def ensure_schema(conn):
         )
 
     conn.commit()
+
+    # ✅ NOVA TABELA NCM (tabela mestre)
+    criar_tabela_ncm(conn)
