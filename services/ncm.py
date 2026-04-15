@@ -33,19 +33,18 @@ def criar_tabela_ncm(conn):
 # INSERIR MANUAL
 # =========================
 def inserir_ncm(ncm, descricao, aliquota):
-    if not validar_ncm(ncm):
-        raise ValueError("NCM inválido. Use ####.##.##")
+    # limpa qualquer coisa que não seja número
+    ncm = ''.join(filter(str.isdigit, ncm))
 
+    if len(ncm) != 8:
+        raise ValueError("NCM inválido. Use 8 dígitos.")
+
+    from database.db import get_conn
     with get_conn() as conn:
         conn.execute(
-            '''
-            INSERT OR IGNORE INTO NCM (ncm, descricao, aliquota)
-            VALUES (?, ?, ?)
-            ''',
+            "INSERT INTO ncm (ncm, descricao, aliquota) VALUES (?, ?, ?)",
             (ncm, descricao, aliquota)
         )
-        conn.commit()
-
 
 # =========================
 # LISTAR

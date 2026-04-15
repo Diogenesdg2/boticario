@@ -1,7 +1,7 @@
 from database.db import get_conn
 import pandas as pd
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, Font
 
 
 OPERACAO_ENTRADA = "COMPRAS DE MERCADORIAS SEM FINANCEIRO"
@@ -30,6 +30,37 @@ def norm_codigo(x):
     return s.lstrip("0")
 
 
+def limpar_ncm(ncm):
+    if pd.isnull(ncm):
+        return ""
+    return "".join(filter(str.isdigit, str(ncm)))
+
+
+def buscar_aliquota_por_ncm(ncm, df_ncm):
+    ncm = limpar_ncm(ncm)
+
+    for i in range(len(ncm), 1, -1):
+        prefixo = ncm[:i]
+        res = df_ncm[df_ncm["ncm_limpo"] == prefixo]
+
+        if not res.empty:
+            return f"{float(res.iloc[0]['aliquota']):.2f}%"
+
+    return "NCM não cadastrado"
+
+
+def aliquota_eh_zero(valor):
+    try:
+        if valor is None:
+            return False
+        v = str(valor).replace("%", "").replace(",", ".").strip()
+        if v == "":
+            return False
+        return float(v) == 0.0
+    except:
+        return False
+
+
 def gerar_excel_notas(empresa_codigo, caminho_saida):
 
     with get_conn() as conn:
@@ -54,7 +85,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             params=(empresa_codigo, OPERACAO_ENTRADA)
         )
 
-        ncm_df = pd.read_sql_query(
+        ncm_rel_df = pd.read_sql_query(
             '''
             SELECT codigo_do_item, ncm, cest
             FROM "NCM E CEST"
@@ -62,9 +93,28 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             conn
         )
 
+        ncm_tab_df = pd.read_sql_query(
+            '''
+            SELECT ncm, aliquota
+            FROM ncm
+            ''',
+            conn
+        )
+
+    # ✅ garante posição como número
+    if "posicao_na_nf" in notas_df.columns:
+        notas_df["posicao_na_nf"] = pd.to_numeric(
+            notas_df["posicao_na_nf"], errors="coerce"
+        ).fillna(0).astype(int)
+    else:
+        notas_df["posicao_na_nf"] = 0
+
     estoque_df["produto_norm"] = estoque_df["produto"].apply(norm_codigo)
     notas_df["produto_norm"] = notas_df["codigo_do_produto"].apply(norm_codigo)
-    ncm_df["produto_norm"] = ncm_df["codigo_do_item"].apply(norm_codigo)
+    ncm_rel_df["produto_norm"] = ncm_rel_df["codigo_do_item"].apply(norm_codigo)
+
+    ncm_rel_df["ncm_limpo"] = ncm_rel_df["ncm"].apply(limpar_ncm)
+    ncm_tab_df["ncm_limpo"] = ncm_tab_df["ncm"].apply(limpar_ncm)
 
     grupos_notas = dict(tuple(notas_df.groupby("produto_norm")))
 
@@ -81,11 +131,29 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         notas_prod = grupos_notas.get(produto_norm)
 
         if notas_prod is None or notas_prod.empty:
+            resultado.append({
+                "produto": produto,
+                "descricao": "",
+                "emitente": "",
+                "numero": "",
+                "serie": "",
+                "subserie": "",
+                "data_emissao": "",
+                "data_entrada": "",
+                "chave_acesso": "",
+                "posicao_na_nf": 0,
+                "quantidade_nota": 0,
+                "quantidade_utilizada": 0,
+                "acumulado": 0,
+                "estoque": saldo,
+                "cobriu_estoque": False,
+                "unidade_medida": ""
+            })
             continue
 
         notas_prod = notas_prod.sort_values(
-            by=["data_de_entrada", "numero_do_documento"],
-            ascending=[False, False]
+            by=["data_de_entrada", "numero_do_documento", "posicao_na_nf"],
+            ascending=[False, False, True]
         )
 
         acumulado = 0.0
@@ -134,6 +202,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "data_emissao": nota.get("data_de_emissao"),
                 "data_entrada": nota.get("data_de_entrada"),
                 "chave_acesso": nota.get("chave_nfe"),
+                "posicao_na_nf": nota.get("posicao_na_nf", 0),
                 "quantidade_nota": qtd,
                 "quantidade_utilizada": qtd_utilizada,
                 "acumulado": acumulado,
@@ -148,16 +217,13 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         df_final.to_excel(caminho_saida, index=False, engine="openpyxl")
         return caminho_saida
 
-    # ✅ AQUI ESTÁ A CORREÇÃO PRINCIPAL
-    df_final["unidade_medida"] = df_final.apply(
-        lambda x: x["unidade_medida"] if x["cobriu_estoque"] else "",
-        axis=1
-    )
+    if "posicao_na_nf" not in df_final.columns:
+        df_final["posicao_na_nf"] = 0
 
     df_final["produto_norm"] = df_final["produto"].apply(norm_codigo)
 
     df_final = df_final.merge(
-        ncm_df[["produto_norm", "ncm", "cest"]],
+        ncm_rel_df[["produto_norm", "ncm", "cest", "ncm_limpo"]],
         on="produto_norm",
         how="left"
     )
@@ -166,11 +232,16 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
     df_final["NCM"] = df_final["ncm"]
     df_final["CEST"] = df_final["cest"]
 
+    df_final["Alíquota"] = df_final["ncm_limpo"].apply(
+        lambda x: buscar_aliquota_por_ncm(x, ncm_tab_df)
+    )
+
     colunas = [
         "produto",
         "descricao",
         "emitente",
         "numero",
+        "posicao_na_nf",
         "serie",
         "subserie",
         "data_emissao",
@@ -184,31 +255,46 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         "Cod. Mercadoria estoque",
         "NCM",
         "CEST",
-        "unidade_medida"
+        "unidade_medida",
+        "Alíquota"
     ]
 
     df_final = df_final[[c for c in colunas if c in df_final.columns]]
 
     df_final = df_final.sort_values(
-        by=["produto", "data_entrada"],
-        ascending=[True, False]
+        by=["produto", "data_entrada", "posicao_na_nf"],
+        ascending=[True, False, True]
     )
 
     df_final.to_excel(caminho_saida, index=False, engine="openpyxl")
 
-    # 🎨 só pintar (não mexe mais nos valores)
+    # 🎨 formatação
     wb = load_workbook(caminho_saida)
     ws = wb.active
 
     fill_verde = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    fill_amarelo = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
+    fonte_vermelha = Font(color="FF0000")
 
     headers = [cell.value for cell in ws[1]]
     idx_flag = headers.index("cobriu_estoque") + 1
+    idx_aliq = headers.index("Alíquota") + 1
 
     for row in ws.iter_rows(min_row=2):
+
         if row[idx_flag - 1].value:
             for cell in row:
                 cell.fill = fill_verde
+
+        valor_aliq = row[idx_aliq - 1].value
+
+        # vermelho
+        if str(valor_aliq).strip() == "NCM não cadastrado":
+            row[idx_aliq - 1].font = fonte_vermelha
+
+        # 🟡 amarelo robusto (qualquer formato de zero)
+        elif aliquota_eh_zero(valor_aliq):
+            row[idx_aliq - 1].fill = fill_amarelo
 
     wb.save(caminho_saida)
 

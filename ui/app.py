@@ -3,152 +3,10 @@ from tkinter import ttk, filedialog, messagebox
 from services.gerar import gerar_excel_notas  
 from database.db import get_conn  
 from importers.db_importer import import_planilha  
-from services.ncm import inserir_ncm, listar_ncm  # ✅ NOVO  
+from services.ncm import inserir_ncm, listar_ncm
+from ui.ncm_view import NCMView
 
-PLANILHAS = ["NCM E CEST", "Estoque", "notas"]  
 
-# ─────────────────────────────────────────────────────────────────────────────  
-# ✅ NOVA TELA: Cadastro NCM  
-# ─────────────────────────────────────────────────────────────────────────────  
-class TelaCadastroNCM(ttk.Frame):
-    def __init__(self, master):
-        super().__init__(master, padding=20)
-        self._build()
-
-    def _build(self):
-        ttk.Label(self, text="Cadastro de NCM", font=("Segoe UI", 14, "bold")).pack(anchor="w", pady=(0, 10))
-
-        form = ttk.Frame(self)
-        form.pack(anchor="w", pady=10)
-
-        ttk.Label(form, text="NCM:").grid(row=0, column=0, sticky="w")
-        self.ent_ncm = ttk.Entry(form, width=20)
-        self.ent_ncm.grid(row=0, column=1, padx=5, pady=5)
-        self.ent_ncm.bind("<KeyRelease>", self._formatar_ncm)  # ✅ máscara
-
-        ttk.Label(form, text="Descrição:").grid(row=1, column=0, sticky="w")
-        self.ent_desc = ttk.Entry(form, width=40)
-        self.ent_desc.grid(row=1, column=1, padx=5, pady=5)
-
-        ttk.Label(form, text="Alíquota:").grid(row=2, column=0, sticky="w")
-        self.ent_aliq = ttk.Entry(form, width=10)
-        self.ent_aliq.grid(row=2, column=1, padx=5, pady=5)
-
-        # ✅ botões
-        btn_frame = ttk.Frame(self)
-        btn_frame.pack(anchor="w", pady=10)
-
-        ttk.Button(btn_frame, text="💾 Salvar", command=self._salvar).pack(side="left", padx=5)
-        ttk.Button(btn_frame, text="✏️ Editar", command=self._editar).pack(side="left", padx=5)
-
-        # ✅ tabela
-        self.tree = ttk.Treeview(self, columns=("id", "ncm", "desc", "aliq"), show="headings", height=10)
-        self.tree.heading("id", text="ID")
-        self.tree.heading("ncm", text="NCM")
-        self.tree.heading("desc", text="Descrição")
-        self.tree.heading("aliq", text="Alíquota")
-
-        self.tree.column("id", width=50)
-        self.tree.column("ncm", width=120)
-
-        self.tree.pack(fill="both", expand=True)
-
-        # ✅ seleção
-        self.tree.bind("<<TreeviewSelect>>", self._on_select)
-
-        self._carregar()
-
-    # ✅ máscara NCM (8 dígitos)
-    def _formatar_ncm(self, event=None):
-        valor = ''.join(filter(str.isdigit, self.ent_ncm.get()))
-        valor = valor[:8]  # máximo 8
-
-        # formata tipo: 1234.56.78 (opcional visual)
-        if len(valor) > 4:
-            valor = valor[:4] + '.' + valor[4:]
-        if len(valor) > 7:
-            valor = valor[:7] + '.' + valor[7:]
-
-        self.ent_ncm.delete(0, "end")
-        self.ent_ncm.insert(0, valor)
-
-    def _salvar(self):
-        try:
-            ncm = self.ent_ncm.get().replace(".", "")
-
-            if len(ncm) != 8:
-                messagebox.showwarning("Atenção", "NCM deve ter 8 dígitos.")
-                return
-
-            inserir_ncm(
-                ncm,
-                self.ent_desc.get(),
-                float(self.ent_aliq.get() or 0)
-            )
-
-            messagebox.showinfo("OK", "NCM cadastrado!")
-            self._limpar()
-            self._carregar()
-
-        except Exception as e:
-            messagebox.showerror("Erro", str(e))
-
-    def _editar(self):
-        sel = self.tree.selection()
-        if not sel:
-            messagebox.showwarning("Atenção", "Selecione um registro.")
-            return
-
-        try:
-            item = self.tree.item(sel[0])["values"]
-            id_ = item[0]
-
-            ncm = self.ent_ncm.get().replace(".", "")
-
-            if len(ncm) != 8:
-                messagebox.showwarning("Atenção", "NCM deve ter 8 dígitos.")
-                return
-
-            from database.db import get_conn
-            with get_conn() as conn:
-                conn.execute(
-                    "UPDATE ncm SET ncm=?, descricao=?, aliquota=? WHERE id=?",
-                    (ncm, self.ent_desc.get(), float(self.ent_aliq.get() or 0), id_)
-                )
-
-            messagebox.showinfo("OK", "NCM atualizado!")
-            self._limpar()
-            self._carregar()
-
-        except Exception as e:
-            messagebox.showerror("Erro", str(e))
-
-    def _carregar(self):
-        self.tree.delete(*self.tree.get_children())
-        for row in listar_ncm():
-            self.tree.insert("", "end", values=row)
-
-    def _on_select(self, event=None):
-        sel = self.tree.selection()
-        if not sel:
-            return
-
-        item = self.tree.item(sel[0])["values"]
-
-        self.ent_ncm.delete(0, "end")
-        self.ent_ncm.insert(0, item[1])
-
-        self.ent_desc.delete(0, "end")
-        self.ent_desc.insert(0, item[2])
-
-        self.ent_aliq.delete(0, "end")
-        self.ent_aliq.insert(0, item[3])
-
-    def _limpar(self):
-        self.ent_ncm.delete(0, "end")
-        self.ent_desc.delete(0, "end")
-        self.ent_aliq.delete(0, "end")
-        
 PLANILHAS = ["NCM E CEST", "Estoque", "notas"]
 
 NOTAS_COLS = [
@@ -217,6 +75,13 @@ NOTAS_FILTROS = [
     ("codigo_do_produto",   "Cód. Produto"),
     ("descricao_produto",   "Descrição Produto"),
 ]
+ESTOQUE_FILTROS = [  
+    ("empresa_codigo", "Empresa"),  
+    ("produto",        "Produto"),  
+    ("descricao",      "Descrição"),  
+    ("unidade",        "Unidade"),  
+    ("saldo_atual",    "Saldo Atual"),  
+]  
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -517,7 +382,139 @@ class TelaConsultaSimples(ttk.Frame):
             self.tree.insert("", "end", values=r)
         self.lbl_total.config(text=f"{len(rows)} registros")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ✅ Tela: Consulta de Estoque (com filtros)
+# ─────────────────────────────────────────────────────────────────────────────
+class TelaConsultaEstoque(ttk.Frame):
+    def __init__(self, master):
+        super().__init__(master, padding=10)
+        self._filtros_vars = {}
+        self._empresas_map = {}
+        self._build()
 
+    def _build(self):
+        ttk.Label(self, text="Consulta: Estoque", font=("Segoe UI", 14, "bold")).pack(
+            anchor="w", pady=(0, 8)
+        )
+
+        frm_filtros = ttk.LabelFrame(self, text="Filtros", padding=10)
+        frm_filtros.pack(fill="x", pady=(0, 8))
+
+        cols_por_linha = 3
+
+        for i, (col_sql, label) in enumerate(ESTOQUE_FILTROS):
+            row = i // cols_por_linha
+            col = (i % cols_por_linha) * 2
+
+            ttk.Label(frm_filtros, text=f"{label}:").grid(
+                row=row, column=col, sticky="w", padx=(10, 2), pady=3
+            )
+
+            var = tk.StringVar()
+            self._filtros_vars[col_sql] = var
+
+            if col_sql == "empresa_codigo":
+                self.cbo_empresa = ttk.Combobox(
+                    frm_filtros, textvariable=var, state="readonly", width=20
+                )
+                self.cbo_empresa.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+            else:
+                ttk.Entry(frm_filtros, textvariable=var, width=22).grid(
+                    row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3
+                )
+
+        btn_frame = ttk.Frame(frm_filtros)
+        btn_frame.grid(
+            row=(len(ESTOQUE_FILTROS) // cols_por_linha) + 1,
+            column=0, columnspan=6, sticky="w", pady=(8, 0), padx=10
+        )
+
+        ttk.Button(btn_frame, text="🔄 Atualizar empresas", command=self._load_empresas).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_frame, text="🔍 Filtrar", command=self._consultar).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_frame, text="🧹 Limpar filtros", command=self._limpar).pack(side="left")
+
+        self.lbl_total = ttk.Label(btn_frame, text="")
+        self.lbl_total.pack(side="left", padx=16)
+
+        frame = ttk.Frame(self)
+        frame.pack(fill="both", expand=True)
+
+        colunas = [
+            "id", "empresa_codigo", "quebra", "produto", "descricao",
+            "unidade", "saldo_inicial", "entradas",
+            "saidas", "saldo_atual", "custo"
+        ]
+
+        self.tree = ttk.Treeview(frame, columns=colunas, show="headings")
+
+        for c in colunas:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=120)
+
+        sb_y = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        sb_x = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
+
+        self.tree.configure(yscrollcommand=sb_y.set, xscrollcommand=sb_x.set)
+
+        sb_y.pack(side="right", fill="y")
+        sb_x.pack(side="bottom", fill="x")
+        self.tree.pack(fill="both", expand=True)
+
+        self._load_empresas()
+
+    def _load_empresas(self):
+        with get_conn() as conn:
+            rows = conn.execute("SELECT codigo, nome FROM empresa ORDER BY codigo").fetchall()
+
+        self._empresas_map = {f"{c} - {n}": c for c, n in rows}
+        valores = ["(Todas)"] + list(self._empresas_map.keys())
+
+        self.cbo_empresa["values"] = valores
+        self.cbo_empresa.current(0)
+
+    def _limpar(self):
+        for var in self._filtros_vars.values():
+            var.set("")
+        self.cbo_empresa.current(0)
+
+    def _consultar(self):
+        where_parts = []
+        params = []
+
+        for col_sql, var in self._filtros_vars.items():
+            val = var.get().strip()
+
+            if not val or val == "(Todas)":
+                continue
+
+            if col_sql == "empresa_codigo":
+                codigo = self._empresas_map.get(val)
+                if codigo:
+                    where_parts.append(f'"{col_sql}" = ?')
+                    params.append(codigo)
+            else:
+                where_parts.append(f'"{col_sql}" LIKE ?')
+                params.append(f"%{val}%")
+
+        where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+
+        with get_conn() as conn:
+            cursor = conn.execute(f'SELECT * FROM "Estoque" {where}', params)
+            rows = cursor.fetchall()
+            colunas = [desc[0] for desc in cursor.description]  # ✅ pega do banco
+
+        self.tree.delete(*self.tree.get_children())
+
+        self.tree["columns"] = colunas
+
+        for c in colunas:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=120)
+
+        for r in rows:
+            self.tree.insert("", "end", values=r)
+
+        self.lbl_total.config(text=f"{len(rows)} registros")
 # ─────────────────────────────────────────────────────────────────────────────
 # Tela: Consulta de Notas (com filtros)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -691,25 +688,14 @@ class App(tk.Tk):
         self._telas = {
             "cadastro":   TelaCadastro(self.content),
             "importacao": TelaImportacao(self.content),
-            "cad_ncm":    TelaCadastroNCM(self.content),  # ✅ NOVO
+            "cad_ncm":    NCMView(self.content),  # ✅ NOVO
             "ncm":        TelaConsultaSimples(self.content, "NCM E CEST", [
                 ("empresa_codigo", "Empresa"),
                 ("codigo_do_item", "Cód. Item"),
                 ("ncm",            "NCM"),
                 ("cest",           "CEST"),
             ]),
-            "estoque":    TelaConsultaSimples(self.content, "Estoque", [
-                ("empresa_codigo", "Empresa"),
-                ("quebra",         "Quebra"),
-                ("produto",        "Produto"),
-                ("descricao",      "Descrição"),
-                ("unidade",        "Unidade"),
-                ("saldo_inicial",  "Saldo Inicial"),
-                ("entradas",       "Entradas"),
-                ("saidas",         "Saídas"),
-                ("saldo_atual",    "Saldo Atual"),
-                ("custo",          "Custo"),
-            ]),
+            "estoque": TelaConsultaEstoque(self.content),
             "notas":      TelaConsultaNotas(self.content),
         }
 
