@@ -5,6 +5,7 @@ from database.db import get_conn
 from importers.db_importer import import_planilha  
 from services.ncm import inserir_ncm, listar_ncm
 from ui.ncm_view import NCMView
+from ui.empresas import TelaEmpresas
 
 
 PLANILHAS = ["NCM E CEST", "Estoque", "notas"]
@@ -82,141 +83,6 @@ ESTOQUE_FILTROS = [
     ("unidade",        "Unidade"),  
     ("saldo_atual",    "Saldo Atual"),  
 ]  
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Tela: Cadastro de Empresa
-# ─────────────────────────────────────────────────────────────────────────────
-class TelaCadastro(ttk.Frame):
-    def __init__(self, master):
-        super().__init__(master, padding=20)
-        self._build()
-
-    def _build(self):
-        ttk.Label(self, text="Cadastro de Empresas", font=("Segoe UI", 14, "bold")).grid(
-            row=0, column=0, columnspan=3, sticky="w", pady=(0, 16)
-        )
-
-        ttk.Label(self, text="Código:").grid(row=1, column=0, sticky="w")
-        self.ent_codigo = ttk.Entry(self, width=20)
-        self.ent_codigo.grid(row=1, column=1, sticky="w", padx=(8, 0), pady=4)
-
-        ttk.Label(self, text="Nome:").grid(row=2, column=0, sticky="w")
-        self.ent_nome = ttk.Entry(self, width=45)
-        self.ent_nome.grid(row=2, column=1, sticky="w", padx=(8, 0), pady=4)
-
-        ttk.Label(self, text="Simples Nacional?").grid(row=3, column=0, sticky="w")
-        self.simples_var = tk.StringVar(value="Não")
-        ttk.Combobox(
-            self, textvariable=self.simples_var,
-            values=["Sim", "Não"], state="readonly", width=10
-        ).grid(row=3, column=1, sticky="w", padx=(8, 0), pady=4)
-
-        # Botões salvar / editar / carregar
-        btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=1, column=2, rowspan=3, padx=12, sticky="ns")
-        ttk.Button(btn_frame, text="💾 Salvar empresa",   command=self._salvar).pack(fill="x", pady=(0, 4))
-        ttk.Button(btn_frame, text="✏️ Salvar Edição",   command=self._editar).pack(fill="x", pady=(0, 4))
-        ttk.Button(btn_frame, text="🔃 Carregar seleção", command=self._carregar_selecao).pack(fill="x")
-
-        ttk.Separator(self, orient="horizontal").grid(
-            row=4, column=0, columnspan=3, sticky="ew", pady=10
-        )
-
-        ttk.Label(self, text="Empresas cadastradas:", font=("Segoe UI", 10, "bold")).grid(
-            row=5, column=0, columnspan=3, sticky="w"
-        )
-
-        # Tabela de empresas
-        frame_tree = ttk.Frame(self)
-        frame_tree.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=8)
-        self.grid_rowconfigure(6, weight=1)
-        self.grid_columnconfigure(1, weight=1)
-
-        self.tree = ttk.Treeview(
-            frame_tree,
-            columns=("codigo", "nome", "simples"),
-            show="headings", height=12
-        )
-        self.tree.heading("codigo",  text="Código")
-        self.tree.heading("nome",    text="Nome")
-        self.tree.heading("simples", text="Simples Nacional?")
-        self.tree.column("codigo",  width=100)
-        self.tree.column("nome",    width=380)
-        self.tree.column("simples", width=130, anchor="center")
-
-        sb = ttk.Scrollbar(frame_tree, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=sb.set)
-        self.tree.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-
-        # Clique na linha preenche os campos automaticamente
-        self.tree.bind("<<TreeviewSelect>>", self._on_tree_select)
-
-        self._carregar()
-
-    def _carregar(self):
-        self.tree.delete(*self.tree.get_children())
-        with get_conn() as conn:
-            rows = conn.execute(
-                "SELECT codigo, nome, simples_nacional FROM empresa ORDER BY codigo"
-            ).fetchall()
-        for r in rows:
-            self.tree.insert("", "end", values=(r[0], r[1], r[2]))
-
-    def _on_tree_select(self, _event=None):
-        sel = self.tree.selection()
-        if not sel:
-            return
-        vals = self.tree.item(sel[0], "values")
-        self.ent_codigo.delete(0, "end")
-        self.ent_codigo.insert(0, vals[0])
-        self.ent_nome.delete(0, "end")
-        self.ent_nome.insert(0, vals[1])
-        self.simples_var.set(vals[2])
-
-    def _carregar_selecao(self):
-        self._on_tree_select()
-
-    def _salvar(self):
-        codigo  = self.ent_codigo.get().strip()
-        nome    = self.ent_nome.get().strip()
-        simples = self.simples_var.get()
-        if not codigo or not nome:
-            messagebox.showwarning("Atenção", "Informe código e nome.")
-            return
-        try:
-            with get_conn() as conn:
-                conn.execute(
-                    "INSERT INTO empresa(codigo, nome, simples_nacional) VALUES(?,?,?)",
-                    (codigo, nome, simples)
-                )
-            self.ent_codigo.delete(0, "end")
-            self.ent_nome.delete(0, "end")
-            self.simples_var.set("Não")
-            self._carregar()
-            messagebox.showinfo("OK", "Empresa cadastrada com sucesso!")
-        except Exception as e:
-            messagebox.showerror("Erro", f"Não foi possível cadastrar.\n\n{e}")
-
-    def _editar(self):
-        codigo  = self.ent_codigo.get().strip()
-        nome    = self.ent_nome.get().strip()
-        simples = self.simples_var.get()
-        if not codigo or not nome:
-            messagebox.showwarning("Atenção", "Informe código e nome.")
-            return
-        try:
-            with get_conn() as conn:
-                conn.execute(
-                    "UPDATE empresa SET nome = ?, simples_nacional = ? WHERE codigo = ?",
-                    (nome, simples, codigo)
-                )
-            self._carregar()
-            messagebox.showinfo("OK", "Empresa atualizada com sucesso!")
-        except Exception as e:
-            messagebox.showerror("Erro", f"Não foi possível editar.\n\n{e}")
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tela: Importação
@@ -687,7 +553,7 @@ class App(tk.Tk):
         self.content.pack(side="left", fill="both", expand=True)
 
         self._telas = {
-            "cadastro":   TelaCadastro(self.content),
+            "cadastro":   TelaEmpresas(self.content),
             "importacao": TelaImportacao(self.content),
             "cad_ncm":    NCMView(self.content),  # ✅ NOVO
             "ncm":        TelaConsultaSimples(self.content, "NCM E CEST", [

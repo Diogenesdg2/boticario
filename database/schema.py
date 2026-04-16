@@ -35,7 +35,9 @@ def ensure_schema(conn):
         CREATE TABLE IF NOT EXISTS empresa (
             codigo           TEXT PRIMARY KEY,
             nome             TEXT NOT NULL,
-            simples_nacional TEXT NOT NULL DEFAULT 'Não'
+            simples_nacional TEXT NOT NULL DEFAULT 'Não',
+            tipo_operacao    TEXT NOT NULL DEFAULT 'Interna',
+            reducao_base     TEXT NOT NULL DEFAULT 'Não'
         )
     """)
 
@@ -45,6 +47,15 @@ def ensure_schema(conn):
             "ALTER TABLE empresa ADD COLUMN simples_nacional TEXT NOT NULL DEFAULT 'Não'"
         )
     except Exception:
+        pass
+    try:
+        cur.execute("ALTER TABLE empresa ADD COLUMN tipo_operacao TEXT NOT NULL DEFAULT 'Interna'")
+    except:
+        pass
+
+    try:
+        cur.execute("ALTER TABLE empresa ADD COLUMN reducao_base TEXT NOT NULL DEFAULT 'Não'")
+    except:
         pass
 
     # ── Tabelas de planilha ─────────────────────────────
