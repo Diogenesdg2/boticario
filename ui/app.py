@@ -88,6 +88,11 @@ class TelaImportacao(ttk.Frame):
         if not codigo:
             messagebox.showwarning("Atenção", "Selecione uma empresa.")
             return
+        if not messagebox.askyesno(
+            "Confirmação",
+            "Isso vai substituir os dados da empresa.\nDeseja continuar?"
+        ):
+            return
         missing = [p for p in PLANILHAS if not self.paths[p].get().strip()]
         if missing:
             messagebox.showwarning("Atenção", "Selecione os arquivos:\n" + "\n".join(missing))

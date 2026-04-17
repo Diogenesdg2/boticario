@@ -31,7 +31,7 @@ class TelaEmpresas(ttk.Frame):
         ttk.Label(self, text="Tipo da operação:").grid(row=4, column=0, sticky="w")
         self.tipo_operacao_var = tk.StringVar(value="Interna")
         ttk.Combobox(self, textvariable=self.tipo_operacao_var,
-                     values=["Interna", "Externa"], state="readonly").grid(row=4, column=1, sticky="w", padx=8, pady=4)
+                     values=["Interna", "Interestadual"], state="readonly").grid(row=4, column=1, sticky="w", padx=8, pady=4)
 
         # ✅ Redução base
         ttk.Label(self, text="Redução de base:").grid(row=5, column=0, sticky="w")

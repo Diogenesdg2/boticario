@@ -32,9 +32,18 @@ class NCMView(tk.Frame):
         self.entry_aliq = ttk.Entry(self, width=15)
         self.entry_aliq.grid(row=3, column=1, sticky="w", padx=5, pady=5)
 
-        ttk.Button(self, text="💾 Salvar", command=self.salvar).grid(row=1, column=2, padx=5)
-        ttk.Button(self, text="✏️ Editar", command=self.editar).grid(row=1, column=3, padx=5)
-        ttk.Button(self, text="🗑️ Excluir", command=self.excluir).grid(row=1, column=4, padx=5)
+        # ── Botões com controle de estado ──
+        self.btn_salvar = ttk.Button(self, text="💾 Salvar", command=self.salvar)
+        self.btn_salvar.grid(row=1, column=2, padx=5)
+
+        self.btn_editar = ttk.Button(self, text="✏️ Salvar Edição", command=self.editar, state="disabled")
+        self.btn_editar.grid(row=1, column=3, padx=5)
+
+        self.btn_excluir = ttk.Button(self, text="🗑️ Excluir", command=self.excluir, state="disabled")
+        self.btn_excluir.grid(row=1, column=4, padx=5)
+
+        self.btn_cancelar = ttk.Button(self, text="❌ Cancelar", command=self.limpar, state="disabled")
+        self.btn_cancelar.grid(row=2, column=4, padx=5)
 
         ttk.Button(self, text="📥 Importar Excel", command=self.importar_excel).grid(
             row=3, column=2, columnspan=2, padx=5, pady=5
@@ -68,7 +77,22 @@ class NCMView(tk.Frame):
 
         self.tree.bind("<<TreeviewSelect>>", self.on_select)
 
-    # ✅ DIGITAÇÃO + FILTRO
+    # ── controle de estado dos botões ──
+    def _modo_novo(self):
+        """Estado padrão: pode salvar novo, não pode editar/excluir"""
+        self.btn_salvar.config(state="normal")
+        self.btn_editar.config(state="disabled")
+        self.btn_excluir.config(state="disabled")
+        self.btn_cancelar.config(state="disabled")
+
+    def _modo_edicao(self):
+        """Registro selecionado: pode editar/excluir, não pode salvar novo"""
+        self.btn_salvar.config(state="disabled")
+        self.btn_editar.config(state="normal")
+        self.btn_excluir.config(state="normal")
+        self.btn_cancelar.config(state="normal")
+
+    # ── digitação + filtro ──
     def _on_ncm_digitando(self, event=None):
         self._formatar_ncm()
         self.filtrar()
@@ -91,7 +115,7 @@ class NCMView(tk.Frame):
 
             self.tree.insert("", "end", values=row_formatado)
 
-    # ✅ ALÍQUOTA
+    # ── alíquota ──
     def _parse_aliquota(self, valor):
         try:
             v = str(valor).replace("%", "").replace(",", ".").strip()
@@ -99,7 +123,7 @@ class NCMView(tk.Frame):
         except:
             return 0.0
 
-    # ✅ IMPORTAÇÃO
+    # ── importação ──
     def importar_excel(self):
         caminho = filedialog.askopenfilename(
             title="Selecionar arquivo",
@@ -138,7 +162,7 @@ class NCMView(tk.Frame):
         except Exception as e:
             messagebox.showerror("Erro", str(e))
 
-    # ✅ FORMATAÇÃO
+    # ── formatação ──
     def _formatar_ncm(self, event=None):
         valor = ''.join(filter(str.isdigit, self.entry_ncm.get()))[:8]
 
@@ -157,7 +181,7 @@ class NCMView(tk.Frame):
             return f"{ncm[:4]}.{ncm[4:6]}.{ncm[6:]}"
         return ncm
 
-    # ✅ SALVAR
+    # ── salvar (novo) ──
     def salvar(self):
         try:
             ncm = self.entry_ncm.get().replace(".", "")
@@ -178,7 +202,7 @@ class NCMView(tk.Frame):
         except Exception as e:
             messagebox.showerror("Erro", str(e))
 
-    # ✅ EDITAR (CORRIGIDO UNIQUE)
+    # ── editar (salvar edição) ──
     def editar(self):
         if not self.id_selecionado:
             messagebox.showwarning("Atenção", "Selecione um registro.")
@@ -208,6 +232,7 @@ class NCMView(tk.Frame):
         except Exception as e:
             messagebox.showerror("Erro", str(e))
 
+    # ── excluir ──
     def excluir(self):
         if not self.id_selecionado:
             return
@@ -221,9 +246,11 @@ class NCMView(tk.Frame):
         self.limpar()
         self.carregar()
 
+    # ── carregar ──
     def carregar(self):
         self.filtrar()
 
+    # ── seleção na tabela ──
     def on_select(self, event):
         sel = self.tree.selection()
         if not sel:
@@ -242,8 +269,15 @@ class NCMView(tk.Frame):
         self.entry_aliq.delete(0, "end")
         self.entry_aliq.insert(0, str(valores[3]).replace("%", ""))
 
+        # ✅ ativa modo edição
+        self._modo_edicao()
+
+    # ── limpar ──
     def limpar(self):
         self.id_selecionado = None
         self.entry_ncm.delete(0, "end")
         self.entry_desc.delete(0, "end")
         self.entry_aliq.delete(0, "end")
+
+        # ✅ volta pro modo novo
+        self._modo_novo()
