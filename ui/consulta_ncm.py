@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from database.db import get_conn
+from utils.exportar import exportar_treeview
 
 
 NCM_FILTROS = [
@@ -48,6 +49,7 @@ class TelaConsultaNCM(ttk.Frame):
         ttk.Button(btn_frame, text="🔄 Empresas", command=self._load_empresas).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🔍 Filtrar", command=self._consultar).pack(side="left", padx=5)
         ttk.Button(btn_frame, text="🧹 Limpar", command=self._limpar).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="📤 Exportar Excel", command=self._exportar).pack(side="left", padx=(8, 0))
 
         self.lbl_total = ttk.Label(btn_frame, text="")
         self.lbl_total.pack(side="left", padx=10)
@@ -125,3 +127,6 @@ class TelaConsultaNCM(ttk.Frame):
             self.tree.insert("", "end", values=r)
 
         self.lbl_total.config(text=f"{len(rows)} registros")
+
+    def _exportar(self):
+        exportar_treeview(self.tree, "NCM_CEST")

@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from database.db import get_conn
-from config import NOTAS_COLS, NOTAS_FILTROS
+from utils.exportar import exportar_treeview
+from config import NOTAS_FILTROS, NOTAS_COLS
 
 
 
@@ -79,6 +80,12 @@ class TelaConsultaNotas(ttk.Frame):
             text="🧹 Limpar filtros",
             command=self._limpar
         ).pack(side="left")
+
+        ttk.Button(
+            btn_frame,
+            text="📤 Exportar Excel",
+            command=self._exportar
+            ).pack(side="left", padx=(8, 0))
 
         self.lbl_total = ttk.Label(btn_frame, text="")
         self.lbl_total.pack(side="left", padx=16)
@@ -169,3 +176,6 @@ class TelaConsultaNotas(ttk.Frame):
             self.tree.insert("", "end", values=r)
 
         self.lbl_total.config(text=f"{len(rows)} registros encontrados")
+
+    def _exportar(self):
+        exportar_treeview(self.tree, "Notas")

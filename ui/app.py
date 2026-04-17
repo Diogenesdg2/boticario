@@ -10,6 +10,7 @@ from ui.consulta_ncm import TelaConsultaNCM
 from ui.consulta_estoque import TelaConsultaEstoque
 from ui.consulta_notas import TelaConsultaNotas
 from config import PLANILHAS
+from ui.log_importacao import TelaLogImportacao
 
 
 
@@ -139,6 +140,7 @@ class App(tk.Tk):
             ("📦  Consulta NCM",     self._show_ncm),
             ("🗂️  Consulta Estoque", self._show_estoque),
             ("🧾  Consulta Notas",   self._show_notas),
+            ("📋  Log Importação",   self._show_log),   
             ("📤  Gerar Excel",      self._gerar_excel),
         ]
 
@@ -161,6 +163,7 @@ class App(tk.Tk):
             "ncm":        TelaConsultaNCM(self.content),
             "estoque":    TelaConsultaEstoque(self.content),
             "notas":      TelaConsultaNotas(self.content),
+            "log":        TelaLogImportacao(self.content),
         }
 
         self._show_cadastro()
@@ -176,6 +179,7 @@ class App(tk.Tk):
     def _show_estoque(self):    self._show("estoque")
     def _show_notas(self):      self._show("notas")
     def _show_cad_ncm(self):    self._show("cad_ncm")  # ✅ NOVO
+    def _show_log(self):        self._show("log")
 
     def _gerar_excel(self):
         with get_conn() as conn:

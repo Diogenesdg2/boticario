@@ -64,10 +64,17 @@ def aliquota_eh_zero(valor):
 def gerar_excel_notas(empresa_codigo, caminho_saida):
 
     with get_conn() as conn:
+
+        # ✅ dados da empresa
+        empresa_info = conn.execute(
+            "SELECT codigo, nome FROM empresa WHERE codigo = ?",
+            (empresa_codigo,)
+        ).fetchone()
+
         estoque_df = pd.read_sql_query(
             '''
             SELECT produto, descricao, saldo_atual
-            FROM "Estoque"
+            FROM "estoque"
             WHERE empresa_codigo = ?
             AND saldo_atual > 0
             ''',
@@ -86,12 +93,15 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             params=(empresa_codigo, OPERACAO_ENTRADA)
         )
 
+        # ✅ AGORA FILTRANDO POR EMPRESA
         ncm_rel_df = pd.read_sql_query(
             '''
             SELECT codigo_do_item, ncm, cest
             FROM "NCM E CEST"
+            WHERE empresa_codigo = ?
             ''',
-            conn
+            conn,
+            params=(empresa_codigo,)
         )
 
         ncm_tab_df = pd.read_sql_query(
@@ -128,7 +138,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
         notas_prod = grupos_notas.get(produto_norm)
 
-        # ✅ PRODUTO SEM QUALQUER NOTA
         if notas_prod is None or notas_prod.empty:
             resultado.append({
                 "produto": produto,
@@ -167,7 +176,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             )
 
             if not numero_nota:
-                continue  # ignora nota inválida
+                continue
 
             encontrou_nota_valida = True
 
@@ -215,7 +224,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "unidade_medida": unidade
             })
 
-        # ✅ tinha notas, mas nenhuma válida
         if not encontrou_nota_valida:
             resultado.append({
                 "produto": produto,
@@ -251,9 +259,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
     )
 
     df_final["Cod. Mercadoria estoque"] = df_final["produto"]
-    df_final["NCM"] = df_final["ncm"]
-    df_final["CEST"] = df_final["cest"]
-
+  
     df_final["Alíquota"] = df_final["ncm_limpo"].apply(
         lambda x: buscar_aliquota_por_ncm(x, ncm_tab_df)
     )
@@ -265,19 +271,28 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
     df_final.to_excel(caminho_saida, index=False, engine="openpyxl")
 
-    # 🎨 formatação
+    # ✅ formatação + cabeçalho empresa
     wb = load_workbook(caminho_saida)
     ws = wb.active
+
+    ws.insert_rows(1)
+
+    if empresa_info:
+        ws["A1"] = f"Empresa: {empresa_info[0]} - {empresa_info[1]}"
+    else:
+        ws["A1"] = f"Empresa: {empresa_codigo}"
+
+    ws["A1"].font = Font(bold=True)
 
     fill_verde = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
     fill_amarelo = PatternFill(start_color="FFF3CD", end_color="FFF3CD", fill_type="solid")
     fonte_vermelha = Font(color="FF0000")
 
-    headers = [cell.value for cell in ws[1]]
+    headers = [cell.value for cell in ws[2]]
     idx_flag = headers.index("cobriu_estoque") + 1
     idx_aliq = headers.index("Alíquota") + 1
 
-    for row in ws.iter_rows(min_row=2):
+    for row in ws.iter_rows(min_row=3):
 
         if row[idx_flag - 1].value:
             for cell in row:

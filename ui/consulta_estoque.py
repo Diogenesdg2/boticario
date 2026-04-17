@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from database.db import get_conn
+from utils.exportar import exportar_treeview
 
 # importe ou mantenha aqui
 from config import ESTOQUE_FILTROS
@@ -80,6 +81,12 @@ class TelaConsultaEstoque(ttk.Frame):
             text="🧹 Limpar filtros",
             command=self._limpar
         ).pack(side="left")
+
+        ttk.Button(
+            btn_frame,
+            text="📤 Exportar Excel",
+            command=self._exportar
+            ).pack(side="left", padx=(8, 0))
 
         self.lbl_total = ttk.Label(btn_frame, text="")
         self.lbl_total.pack(side="left", padx=16)
@@ -174,3 +181,6 @@ class TelaConsultaEstoque(ttk.Frame):
             self.tree.insert("", "end", values=r)
 
         self.lbl_total.config(text=f"{len(rows)} registros")
+
+    def _exportar(self):
+         exportar_treeview(self.tree, "Estoque")
