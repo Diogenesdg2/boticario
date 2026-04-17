@@ -11,6 +11,7 @@ from ui.consulta_estoque import TelaConsultaEstoque
 from ui.consulta_notas import TelaConsultaNotas
 from config import PLANILHAS
 from ui.log_importacao import TelaLogImportacao
+from services.limpar import limpar_dados_empresa
 
 
 
@@ -134,14 +135,16 @@ class App(tk.Tk):
         ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=10)
 
         menus = [
-            ("🏢  Cadastro",         self._show_cadastro),
-            ("⬆️  Importação",       self._show_importacao),
-            ("🧩  Cadastro NCM",     self._show_cad_ncm),  # ✅ NOVO
-            ("📦  Consulta NCM",     self._show_ncm),
-            ("🗂️  Consulta Estoque", self._show_estoque),
-            ("🧾  Consulta Notas",   self._show_notas),
-            ("📋  Log Importação",   self._show_log),   
-            ("📤  Gerar Excel",      self._gerar_excel),
+            ("🏢  Cadastro de Empresas",        self._show_cadastro),
+            ("🧩  Cadastro NCM",                self._show_cad_ncm), 
+            ("⬆️  Importação",                  self._show_importacao),  
+            ("🧹  Limpar Dados",                self._limpar_dados),
+            ("📦  Consulta NCM",                self._show_ncm),
+            ("🗂️  Consulta Estoque",            self._show_estoque),
+            ("🧾  Consulta Notas",              self._show_notas),
+            ("📋  Log Importação",              self._show_log),   
+            ("📤  Gerar Excel",                 self._gerar_excel),
+
         ]
 
         for label, cmd in menus:
@@ -178,7 +181,7 @@ class App(tk.Tk):
     def _show_ncm(self):        self._show("ncm")
     def _show_estoque(self):    self._show("estoque")
     def _show_notas(self):      self._show("notas")
-    def _show_cad_ncm(self):    self._show("cad_ncm")  # ✅ NOVO
+    def _show_cad_ncm(self):    self._show("cad_ncm") 
     def _show_log(self):        self._show("log")
 
     def _gerar_excel(self):
@@ -228,3 +231,53 @@ class App(tk.Tk):
                 messagebox.showerror("Erro", str(e))
 
         ttk.Button(win, text="Gerar", command=confirmar).pack(pady=10)
+
+    def _limpar_dados(self):
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT codigo, nome FROM empresa ORDER BY codigo"
+            ).fetchall()
+
+        if not rows:
+            messagebox.showwarning("Atenção", "Nenhuma empresa cadastrada.")
+            return
+
+        opcoes = [f"{c} - {n}" for c, n in rows]
+
+        win = tk.Toplevel(self)
+        win.title("Limpar Dados da Empresa")
+        win.geometry("400x180")
+
+        ttk.Label(win, text="Selecione a empresa:").pack(pady=10)
+
+        empresa_var = tk.StringVar()
+        cbo = ttk.Combobox(win, textvariable=empresa_var, values=opcoes, state="readonly", width=45)
+        cbo.pack()
+        cbo.current(0)
+
+        def confirmar():
+            selecao = empresa_var.get()
+            if not selecao:
+                return
+
+            codigo = selecao.split(" - ")[0]
+
+            if not messagebox.askyesno(
+                "Confirmação",
+                f"Isso irá apagar TODOS os dados da empresa {codigo}.\nDeseja continuar?"
+            ):
+                return
+
+            try:
+                rel = limpar_dados_empresa(codigo)
+
+                texto = "\n".join([f"{tabela}: {qtd} registros removidos" for tabela, qtd in rel.items()])
+
+                messagebox.showinfo("Limpeza concluída", texto)
+
+                win.destroy()
+
+            except Exception as e:
+                messagebox.showerror("Erro", str(e))
+
+        ttk.Button(win, text="Limpar Dados", command=confirmar).pack(pady=20)

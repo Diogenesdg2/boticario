@@ -5,12 +5,12 @@ from utils.exportar import exportar_treeview
 from config import NOTAS_FILTROS, NOTAS_COLS
 
 
-
 class TelaConsultaNotas(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=10)
-        self._filtros_vars  = {}
-        self._empresas_map  = {}
+        self._filtros_vars = {}
+        self._filtros_widgets = {}
+        self._empresas_map = {}
         self._build()
 
     def _build(self):
@@ -20,7 +20,6 @@ class TelaConsultaNotas(ttk.Frame):
             font=("Segoe UI", 14, "bold")
         ).pack(anchor="w", pady=(0, 8))
 
-        # ── Filtros ──────────────────────────────────────────────
         frm_filtros = ttk.LabelFrame(self, text="Filtros", padding=10)
         frm_filtros.pack(fill="x", pady=(0, 8))
 
@@ -42,17 +41,20 @@ class TelaConsultaNotas(ttk.Frame):
                     frm_filtros,
                     textvariable=var,
                     state="readonly",
-                    width=20
+                    width=25
                 )
                 self.cbo_empresa.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+                self.cbo_empresa.bind("<<ComboboxSelected>>", self._on_empresa_change)
             else:
-                ttk.Entry(
+                entry = ttk.Entry(
                     frm_filtros,
                     textvariable=var,
-                    width=22
-                ).grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+                    width=22,
+                    state="disabled"
+                )
+                entry.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+                self._filtros_widgets[col_sql] = entry
 
-        # ── Botões ──────────────────────────────────────────────
         btn_frame = ttk.Frame(frm_filtros)
         btn_frame.grid(
             row=(len(NOTAS_FILTROS) // cols_por_linha) + 1,
@@ -69,11 +71,13 @@ class TelaConsultaNotas(ttk.Frame):
             command=self._load_empresas
         ).pack(side="left", padx=(0, 8))
 
-        ttk.Button(
+        self.btn_filtrar = ttk.Button(
             btn_frame,
             text="🔍 Filtrar",
-            command=self._consultar
-        ).pack(side="left", padx=(0, 8))
+            command=self._consultar,
+            state="disabled"
+        )
+        self.btn_filtrar.pack(side="left", padx=(0, 8))
 
         ttk.Button(
             btn_frame,
@@ -85,16 +89,15 @@ class TelaConsultaNotas(ttk.Frame):
             btn_frame,
             text="📤 Exportar Excel",
             command=self._exportar
-            ).pack(side="left", padx=(8, 0))
+        ).pack(side="left", padx=(8, 0))
 
         self.lbl_total = ttk.Label(btn_frame, text="")
         self.lbl_total.pack(side="left", padx=16)
 
-        # ── Tabela ──────────────────────────────────────────────
         frame = ttk.Frame(self)
         frame.pack(fill="both", expand=True)
 
-        col_ids    = [c[0] for c in NOTAS_COLS]
+        col_ids = [c[0] for c in NOTAS_COLS]
         col_labels = [c[1] for c in NOTAS_COLS]
 
         self.tree = ttk.Treeview(frame, columns=col_ids, show="headings")
@@ -117,7 +120,7 @@ class TelaConsultaNotas(ttk.Frame):
 
         self._load_empresas()
 
-    # ─────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def _load_empresas(self):
         with get_conn() as conn:
@@ -126,39 +129,66 @@ class TelaConsultaNotas(ttk.Frame):
             ).fetchall()
 
         self._empresas_map = {f"{c} - {n}": c for c, n in rows}
-        valores = ["(Todas)"] + list(self._empresas_map.keys())
+        valores = list(self._empresas_map.keys())
 
         self.cbo_empresa["values"] = valores
-        self.cbo_empresa.current(0)
+        self.cbo_empresa.set("")  # ✅ começa vazio
+
+        self._bloquear_campos()
+
+    def _on_empresa_change(self, event=None):
+        empresa = self.cbo_empresa.get().strip()
+
+        if empresa:
+            self._liberar_campos()
+        else:
+            self._bloquear_campos()
+
+    def _bloquear_campos(self):
+        for widget in self._filtros_widgets.values():
+            widget.config(state="disabled")
+
+        self.btn_filtrar.config(state="disabled")
+
+    def _liberar_campos(self):
+        for widget in self._filtros_widgets.values():
+            widget.config(state="normal")
+
+        self.btn_filtrar.config(state="normal")
 
     def _limpar(self):
-        for var in self._filtros_vars.values():
-            var.set("")
-        self.cbo_empresa.current(0)
+        for col, var in self._filtros_vars.items():
+            if col != "empresa_codigo":
+                var.set("")
 
     def _consultar(self):
-        col_ids  = [c[0] for c in NOTAS_COLS]
+        empresa_sel = self._filtros_vars["empresa_codigo"].get().strip()
+
+        if not empresa_sel:
+            messagebox.showwarning("Atenção", "Selecione uma empresa.")
+            return
+
+        empresa_codigo = self._empresas_map.get(empresa_sel)
+
+        col_ids = [c[0] for c in NOTAS_COLS]
         cols_sql = ", ".join([f'"{c}"' for c in col_ids])
 
-        where_parts = []
-        params = []
+        where_parts = ['"empresa_codigo" = ?']
+        params = [empresa_codigo]
 
         for col_sql, var in self._filtros_vars.items():
-            val = var.get().strip()
-
-            if not val or val == "(Todas)":
+            if col_sql == "empresa_codigo":
                 continue
 
-            if col_sql == "empresa_codigo":
-                codigo = self._empresas_map.get(val)
-                if codigo:
-                    where_parts.append(f'"{col_sql}" = ?')
-                    params.append(codigo)
-            else:
-                where_parts.append(f'"{col_sql}" LIKE ?')
-                params.append(f"%{val}%")
+            val = var.get().strip()
 
-        where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+            if not val:
+                continue
+
+            where_parts.append(f'"{col_sql}" LIKE ?')
+            params.append(f"%{val}%")
+
+        where = "WHERE " + " AND ".join(where_parts)
 
         try:
             with get_conn() as conn:

@@ -1,9 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 from database.db import get_conn
 from utils.exportar import exportar_treeview
-
-# importe ou mantenha aqui
 from config import ESTOQUE_FILTROS
 
 
@@ -11,6 +9,7 @@ class TelaConsultaEstoque(ttk.Frame):
     def __init__(self, master):
         super().__init__(master, padding=10)
         self._filtros_vars = {}
+        self._filtros_widgets = {}
         self._empresas_map = {}
         self._build()
 
@@ -21,7 +20,6 @@ class TelaConsultaEstoque(ttk.Frame):
             font=("Segoe UI", 14, "bold")
         ).pack(anchor="w", pady=(0, 8))
 
-        # ── Filtros ──────────────────────────────────────────────
         frm_filtros = ttk.LabelFrame(self, text="Filtros", padding=10)
         frm_filtros.pack(fill="x", pady=(0, 8))
 
@@ -43,17 +41,20 @@ class TelaConsultaEstoque(ttk.Frame):
                     frm_filtros,
                     textvariable=var,
                     state="readonly",
-                    width=20
+                    width=25
                 )
                 self.cbo_empresa.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+                self.cbo_empresa.bind("<<ComboboxSelected>>", self._on_empresa_change)
             else:
-                ttk.Entry(
+                entry = ttk.Entry(
                     frm_filtros,
                     textvariable=var,
-                    width=22
-                ).grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+                    width=22,
+                    state="disabled"
+                )
+                entry.grid(row=row, column=col + 1, sticky="w", padx=(0, 14), pady=3)
+                self._filtros_widgets[col_sql] = entry
 
-        # ── Botões ──────────────────────────────────────────────
         btn_frame = ttk.Frame(frm_filtros)
         btn_frame.grid(
             row=(len(ESTOQUE_FILTROS) // cols_por_linha) + 1,
@@ -70,11 +71,13 @@ class TelaConsultaEstoque(ttk.Frame):
             command=self._load_empresas
         ).pack(side="left", padx=(0, 8))
 
-        ttk.Button(
+        self.btn_filtrar = ttk.Button(
             btn_frame,
             text="🔍 Filtrar",
-            command=self._consultar
-        ).pack(side="left", padx=(0, 8))
+            command=self._consultar,
+            state="disabled"
+        )
+        self.btn_filtrar.pack(side="left", padx=(0, 8))
 
         ttk.Button(
             btn_frame,
@@ -86,26 +89,15 @@ class TelaConsultaEstoque(ttk.Frame):
             btn_frame,
             text="📤 Exportar Excel",
             command=self._exportar
-            ).pack(side="left", padx=(8, 0))
+        ).pack(side="left", padx=(8, 0))
 
         self.lbl_total = ttk.Label(btn_frame, text="")
         self.lbl_total.pack(side="left", padx=16)
 
-        # ── Tabela ──────────────────────────────────────────────
         frame = ttk.Frame(self)
         frame.pack(fill="both", expand=True)
 
-        colunas = [
-            "id", "empresa_codigo", "quebra", "produto", "descricao",
-            "unidade", "saldo_inicial", "entradas",
-            "saidas", "saldo_atual", "custo"
-        ]
-
-        self.tree = ttk.Treeview(frame, columns=colunas, show="headings")
-
-        for c in colunas:
-            self.tree.heading(c, text=c)
-            self.tree.column(c, width=120)
+        self.tree = ttk.Treeview(frame, show="headings")
 
         sb_y = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         sb_x = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
@@ -121,7 +113,7 @@ class TelaConsultaEstoque(ttk.Frame):
 
         self._load_empresas()
 
-    # ─────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────
 
     def _load_empresas(self):
         with get_conn() as conn:
@@ -130,47 +122,76 @@ class TelaConsultaEstoque(ttk.Frame):
             ).fetchall()
 
         self._empresas_map = {f"{c} - {n}": c for c, n in rows}
-        valores = ["(Todas)"] + list(self._empresas_map.keys())
+        valores = list(self._empresas_map.keys())
 
         self.cbo_empresa["values"] = valores
-        self.cbo_empresa.current(0)
+
+        if valores:
+            self.cbo_empresa.set("")
+
+        self._bloquear_campos()
+
+    def _on_empresa_change(self, event=None):
+        empresa = self.cbo_empresa.get().strip()
+
+        if empresa:
+            self._liberar_campos()
+        else:
+            self._bloquear_campos()
+
+    def _bloquear_campos(self):
+        for widget in self._filtros_widgets.values():
+            widget.config(state="disabled")
+
+        self.btn_filtrar.config(state="disabled")
+
+    def _liberar_campos(self):
+        for widget in self._filtros_widgets.values():
+            widget.config(state="normal")
+
+        self.btn_filtrar.config(state="normal")
 
     def _limpar(self):
-        for var in self._filtros_vars.values():
-            var.set("")
-        self.cbo_empresa.current(0)
+        for col, var in self._filtros_vars.items():
+            if col != "empresa_codigo":
+                var.set("")
 
     def _consultar(self):
-        where_parts = []
-        params = []
+
+        empresa_sel = self._filtros_vars["empresa_codigo"].get().strip()
+
+        if not empresa_sel:
+            messagebox.showwarning("Atenção", "Selecione uma empresa.")
+            return
+
+        empresa_codigo = self._empresas_map.get(empresa_sel)
+
+        where_parts = ['"empresa_codigo" = ?']
+        params = [empresa_codigo]
 
         for col_sql, var in self._filtros_vars.items():
-            val = var.get().strip()
-
-            if not val or val == "(Todas)":
+            if col_sql == "empresa_codigo":
                 continue
 
-            if col_sql == "empresa_codigo":
-                codigo = self._empresas_map.get(val)
-                if codigo:
-                    where_parts.append(f'"{col_sql}" = ?')
-                    params.append(codigo)
-            else:
-                where_parts.append(f'"{col_sql}" LIKE ?')
-                params.append(f"%{val}%")
+            val = var.get().strip()
 
-        where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+            if not val:
+                continue
+
+            where_parts.append(f'"{col_sql}" LIKE ?')
+            params.append(f"%{val}%")
+
+        where = "WHERE " + " AND ".join(where_parts)
 
         with get_conn() as conn:
             cursor = conn.execute(
-                f'SELECT * FROM "Estoque" {where}',
+                f'SELECT * FROM "estoque" {where}',
                 params
             )
             rows = cursor.fetchall()
             colunas = [desc[0] for desc in cursor.description]
 
         self.tree.delete(*self.tree.get_children())
-
         self.tree["columns"] = colunas
 
         for c in colunas:
@@ -183,4 +204,4 @@ class TelaConsultaEstoque(ttk.Frame):
         self.lbl_total.config(text=f"{len(rows)} registros")
 
     def _exportar(self):
-         exportar_treeview(self.tree, "Estoque")
+        exportar_treeview(self.tree, "Estoque")
