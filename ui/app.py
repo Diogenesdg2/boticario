@@ -12,6 +12,7 @@ from ui.consulta_notas import TelaConsultaNotas
 from config import PLANILHAS
 from ui.log_importacao import TelaLogImportacao
 from services.limpar import limpar_dados_empresa
+from ui.dashboard import Dashboard
 
 
 
@@ -135,6 +136,7 @@ class App(tk.Tk):
         ttk.Separator(sidebar, orient="horizontal").pack(fill="x", padx=10)
 
         menus = [
+            ("📊 Dashboard",                    self._show_dashboard),
             ("🏢  Cadastro de Empresas",        self._show_cadastro),
             ("🧩  Cadastro NCM",                self._show_cad_ncm), 
             ("⬆️  Importação",                  self._show_importacao),  
@@ -160,6 +162,7 @@ class App(tk.Tk):
         self.content.pack(side="left", fill="both", expand=True)
 
         self._telas = {
+            "dashboard":  Dashboard(self.content),
             "cadastro":   TelaEmpresas(self.content),
             "importacao": TelaImportacao(self.content),
             "cad_ncm":    NCMView(self.content),
@@ -170,6 +173,10 @@ class App(tk.Tk):
         }
 
         self._show_cadastro()
+
+    def _clear_content(self):
+        for widget in self.content.winfo_children():
+            widget.destroy()    
 
     def _show(self, key: str):
         for tela in self._telas.values():
@@ -281,3 +288,6 @@ class App(tk.Tk):
                 messagebox.showerror("Erro", str(e))
 
         ttk.Button(win, text="Limpar Dados", command=confirmar).pack(pady=20)
+
+    def _show_dashboard(self):
+        self._show("dashboard")
