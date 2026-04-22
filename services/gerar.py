@@ -1,3 +1,4 @@
+import os
 from database.db import get_conn
 import pandas as pd
 from openpyxl import load_workbook
@@ -6,17 +7,28 @@ from openpyxl.styles import PatternFill, Font
 
 OPERACAO_ENTRADA = "COMPRAS DE MERCADORIAS SEM FINANCEIRO"
 
+DEBUG = True  # ✅ controle de debug
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEBUG_FILE = os.path.join(BASE_DIR, "debug.txt")
+
 
 def to_float(valor):
     try:
         if valor is None:
             return 0.0
-        if isinstance(valor, str):
-            v = valor.strip().replace(".", "").replace(",", ".")
-            if v == "":
-                return 0.0
-            return float(v)
-        return float(valor)
+
+        if isinstance(valor, (int, float)):
+            return float(valor)
+
+        v = str(valor).strip()
+
+        if v == "":
+            return 0.0
+
+        if "," in v:
+            v = v.replace(".", "").replace(",", ".")
+        return float(v)
+
     except:
         return 0.0
 
@@ -44,9 +56,25 @@ def buscar_aliquota_por_ncm(ncm, df_ncm):
         res = df_ncm[df_ncm["ncm_limpo"] == prefixo]
 
         if not res.empty:
-            return f"{float(res.iloc[0]['aliquota']):.2f}%"
+            aliq = to_float(res.iloc[0]['aliquota'])
+            if aliq > 1:
+                aliq = aliq / 100
+            return aliq
 
-    return "NCM não cadastrado"
+    return 0.0
+
+
+def buscar_aliquota_float(ncm, df_ncm):
+    ncm = limpar_ncm(ncm)
+
+    for i in range(len(ncm), 1, -1):
+        prefixo = ncm[:i]
+        res = df_ncm[df_ncm["ncm_limpo"] == prefixo]
+
+        if not res.empty:
+            return to_float(res.iloc[0]["aliquota"])
+
+    return 0.0
 
 
 def aliquota_eh_zero(valor):
@@ -63,13 +91,22 @@ def aliquota_eh_zero(valor):
 
 def gerar_excel_notas(empresa_codigo, caminho_saida):
 
+    if DEBUG:
+        with open(DEBUG_FILE, "w", encoding="utf-8") as f:
+            f.write("DEBUG ICMS ST\n\n")
+
     with get_conn() as conn:
 
-        # ✅ dados da empresa
         empresa_info = conn.execute(
             "SELECT codigo, nome FROM empresa WHERE codigo = ?",
             (empresa_codigo,)
         ).fetchone()
+
+        empresa_sn = conn.execute(
+            "SELECT simples_nacional FROM empresa WHERE codigo = ?",
+            (empresa_codigo,)
+        ).fetchone()
+        empresa_sn = empresa_sn[0] if empresa_sn else "N"
 
         estoque_df = pd.read_sql_query(
             '''
@@ -93,7 +130,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             params=(empresa_codigo, OPERACAO_ENTRADA)
         )
 
-        # ✅ AGORA FILTRANDO POR EMPRESA
         ncm_rel_df = pd.read_sql_query(
             '''
             SELECT codigo_do_item, ncm, cest
@@ -155,7 +191,8 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "acumulado": 0,
                 "estoque": saldo,
                 "cobriu_estoque": False,
-                "unidade_medida": ""
+                "unidade_medida": "",
+                "Credito - item 10": 0.0
             })
             continue
 
@@ -195,7 +232,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
             restante = saldo - acumulado
             qtd_utilizada = min(qtd, restante)
-
             acumulado += qtd_utilizada
 
             unidade = (
@@ -204,6 +240,41 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 or nota.get("ucom")
                 or ""
             )
+
+            # ✅ NOVA REGRA (PROPORCIONAL)
+            bc_st_total = to_float(nota.get("base_de_calculo_do_icms_st_do_item"))
+            qtd_total = qtd
+
+            bc_st_proporcional = 0.0
+            if qtd_total > 0:
+                bc_st_proporcional = (bc_st_total / qtd_total) * qtd_utilizada
+
+            ncm_item = ncm_rel_df[ncm_rel_df["produto_norm"] == produto_norm]
+            ncm_codigo = ncm_item.iloc[0]["ncm_limpo"] if not ncm_item.empty else ""
+
+            aliquota = buscar_aliquota_float(ncm_codigo, ncm_tab_df)
+
+            credito_item_10 = 0.0
+
+            if aliquota > 0 and bc_st_proporcional > 0:
+                credito_item_10 = bc_st_proporcional * (aliquota / 100)
+
+            # ✅ DEBUG
+            if DEBUG:
+                debug_linha = (
+                    f"PRODUTO: {produto} | "
+                    f"BC_TOTAL: {bc_st_total} | "
+                    f"QTD_TOTAL: {qtd_total} | "
+                    f"QTD_UTIL: {qtd_utilizada} | "
+                    f"BC_PROP: {bc_st_proporcional} | "
+                    f"ALIQ: {aliquota} | "
+                    f"CREDITO: {credito_item_10}\n"
+                )
+
+                print(debug_linha)
+
+                with open(DEBUG_FILE, "a", encoding="utf-8") as f:
+                    f.write(debug_linha)
 
             resultado.append({
                 "produto": produto,
@@ -221,27 +292,8 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "acumulado": acumulado,
                 "estoque": saldo,
                 "cobriu_estoque": acumulado >= saldo,
-                "unidade_medida": unidade
-            })
-
-        if not encontrou_nota_valida:
-            resultado.append({
-                "produto": produto,
-                "descricao": descricao_estoque,
-                "emitente": "",
-                "numero": "Nota não encontrada",
-                "serie": "",
-                "subserie": "",
-                "data_emissao": "",
-                "data_entrada": "",
-                "chave_acesso": "",
-                "posicao_na_nf": 0,
-                "quantidade_nota": 0,
-                "quantidade_utilizada": 0,
-                "acumulado": 0,
-                "estoque": saldo,
-                "cobriu_estoque": False,
-                "unidade_medida": ""
+                "unidade_medida": unidade,
+                "Credito - item 10": round(credito_item_10, 2)
             })
 
     df_final = pd.DataFrame(resultado)
@@ -259,7 +311,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
     )
 
     df_final["Cod. Mercadoria estoque"] = df_final["produto"]
-  
+
     df_final["Alíquota"] = df_final["ncm_limpo"].apply(
         lambda x: buscar_aliquota_por_ncm(x, ncm_tab_df)
     )
@@ -271,7 +323,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
     df_final.to_excel(caminho_saida, index=False, engine="openpyxl")
 
-    # ✅ formatação + cabeçalho empresa
     wb = load_workbook(caminho_saida)
     ws = wb.active
 
