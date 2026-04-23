@@ -13,6 +13,7 @@ from config import PLANILHAS
 from ui.log_importacao import TelaLogImportacao
 from services.limpar import limpar_dados_empresa
 from ui.dashboard import Dashboard
+from services.inventario import gerar_inventario
 
 
 
@@ -146,6 +147,7 @@ class App(tk.Tk):
             ("🧾  Consulta Notas",              self._show_notas),
             ("📋  Log Importação",              self._show_log),   
             ("📤  Gerar Excel",                 self._gerar_excel),
+            ("📦  Gerar Inventário",            self._gerar_inventario), 
 
         ]
 
@@ -291,3 +293,51 @@ class App(tk.Tk):
 
     def _show_dashboard(self):
         self._show("dashboard")
+
+    def _gerar_inventario(self):
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT codigo, nome FROM empresa ORDER BY codigo"
+            ).fetchall()
+
+        if not rows:
+            messagebox.showwarning("Atenção", "Nenhuma empresa cadastrada.")
+            return
+
+        opcoes = [f"{c} - {n}" for c, n in rows]
+
+        win = tk.Toplevel(self)
+        win.title("Gerar Inventário")
+        win.geometry("350x120")
+
+        ttk.Label(win, text="Escolha a empresa:").pack(pady=10)
+
+        empresa_var = tk.StringVar()
+        cbo = ttk.Combobox(win, textvariable=empresa_var, values=opcoes, state="readonly", width=40)
+        cbo.pack()
+        cbo.current(0)
+
+        def confirmar():
+            selecao = empresa_var.get()
+            if not selecao:
+                return
+
+            codigo = selecao.split(" - ")[0]
+
+            caminho = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel", "*.xlsx")],
+                title="Salvar inventário"
+            )
+
+            if not caminho:
+                return
+
+            try:
+                gerar_inventario(codigo, caminho)
+                messagebox.showinfo("Sucesso", f"Inventário gerado:\n{caminho}")
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror("Erro", str(e))
+
+        ttk.Button(win, text="Gerar", command=confirmar).pack(pady=10)
