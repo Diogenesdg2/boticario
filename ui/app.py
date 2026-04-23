@@ -13,7 +13,7 @@ from config import PLANILHAS
 from ui.log_importacao import TelaLogImportacao
 from services.limpar import limpar_dados_empresa
 from ui.dashboard import Dashboard
-from services.inventario import gerar_inventario
+from services.inventario import gerar_inventario, gerar_inventario_pdf
 
 
 
@@ -295,6 +295,11 @@ class App(tk.Tk):
         self._show("dashboard")
 
     def _gerar_inventario(self):
+
+        from database.db import get_conn
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
+
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT codigo, nome FROM empresa ORDER BY codigo"
@@ -308,36 +313,38 @@ class App(tk.Tk):
 
         win = tk.Toplevel(self)
         win.title("Gerar Inventário")
-        win.geometry("350x120")
+        win.geometry("400x200")
 
         ttk.Label(win, text="Escolha a empresa:").pack(pady=10)
 
         empresa_var = tk.StringVar()
-        cbo = ttk.Combobox(win, textvariable=empresa_var, values=opcoes, state="readonly", width=40)
+        cbo = ttk.Combobox(win, textvariable=empresa_var, values=opcoes, state="readonly", width=45)
         cbo.pack()
         cbo.current(0)
 
-        def confirmar():
-            selecao = empresa_var.get()
-            if not selecao:
-                return
-
-            codigo = selecao.split(" - ")[0]
+        def gerar_excel():
+            codigo = empresa_var.get().split(" - ")[0]
 
             caminho = filedialog.asksaveasfilename(
                 defaultextension=".xlsx",
-                filetypes=[("Excel", "*.xlsx")],
-                title="Salvar inventário"
+                filetypes=[("Excel", "*.xlsx")]
             )
 
-            if not caminho:
-                return
-
-            try:
+            if caminho:
                 gerar_inventario(codigo, caminho)
-                messagebox.showinfo("Sucesso", f"Inventário gerado:\n{caminho}")
-                win.destroy()
-            except Exception as e:
-                messagebox.showerror("Erro", str(e))
+                messagebox.showinfo("Sucesso", "Excel gerado!")
 
-        ttk.Button(win, text="Gerar", command=confirmar).pack(pady=10)
+        def gerar_pdf():
+            codigo = empresa_var.get().split(" - ")[0]
+
+            caminho = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("PDF", "*.pdf")]
+            )
+
+            if caminho:
+                gerar_inventario_pdf(codigo, caminho)
+                messagebox.showinfo("Sucesso", "PDF gerado!")
+
+        ttk.Button(win, text="📊 Gerar Excel", command=gerar_excel).pack(pady=8)
+        ttk.Button(win, text="📄 Gerar PDF", command=gerar_pdf).pack(pady=8)

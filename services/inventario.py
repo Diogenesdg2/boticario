@@ -1,5 +1,9 @@
 import pandas as pd
 from database.db import get_conn
+from reportlab.lib.pagesizes import A4, landscape  
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageTemplate, Frame  
+from reportlab.lib import colors  
+from reportlab.lib.styles import getSampleStyleSheet  
 
 from services.gerar import (
     to_float,
@@ -63,7 +67,6 @@ def gerar_inventario(empresa_codigo, caminho_saida):
             conn
         )
 
-    # ✅ normalizações
     estoque_df["produto_norm"] = estoque_df["produto"].apply(norm_codigo)
     notas_df["produto_norm"] = notas_df["codigo_do_produto"].apply(norm_codigo)
     ncm_rel_df["produto_norm"] = ncm_rel_df["codigo_do_item"].apply(norm_codigo)
@@ -71,7 +74,6 @@ def gerar_inventario(empresa_codigo, caminho_saida):
     ncm_rel_df["ncm_limpo"] = ncm_rel_df["ncm"].apply(limpar_ncm)
     ncm_tab_df["ncm_limpo"] = ncm_tab_df["ncm"].apply(limpar_ncm)
 
-    # ✅ ordenar posição
     if "posicao_na_nf" in notas_df.columns:
         notas_df["posicao_na_nf"] = pd.to_numeric(
             notas_df["posicao_na_nf"], errors="coerce"
@@ -95,7 +97,6 @@ def gerar_inventario(empresa_codigo, caminho_saida):
         if notas_prod is None or notas_prod.empty:
             continue
 
-        # ✅ MESMA ORDEM DO GERAR.PY
         notas_prod = notas_prod.sort_values(
             by=["data_de_entrada", "numero_do_documento", "posicao_na_nf"],
             ascending=[False, False, True]
@@ -143,21 +144,13 @@ def gerar_inventario(empresa_codigo, caminho_saida):
 
             credito = 0.0
 
-            # ✅ SIMPLES (igual gerar.py)
             if empresa_sn_flag:
-
                 base_diff = bc_st_total - bc_icms
-
                 valor_prop = (base_diff / qtd) * qtd_utilizada if qtd > 0 else 0
-
                 if aliquota > 0 and valor_prop > 0:
                     credito = valor_prop * (aliquota / 100)
-
-            # ✅ NORMAL (igual gerar.py)
             else:
-
                 bc_prop = (bc_st_total / qtd) * qtd_utilizada if qtd > 0 else 0
-
                 if aliquota > 0 and bc_prop > 0:
                     credito = bc_prop * (aliquota / 100)
 
@@ -167,13 +160,10 @@ def gerar_inventario(empresa_codigo, caminho_saida):
                 "NCM": ncm_codigo,
                 "UNIDADE": unidade,
                 "NF": numero_nota,
-
                 "QTD NOTA": qtd,
                 "QTD UTILIZADA": qtd_utilizada,
-
                 "VALOR UNITARIO": round(valor_unit, 2),
                 "VALOR TOTAL": round(valor_total, 2),
-
                 "ALIQ INTERNA": aliquota,
                 "VALOR DO CREDITO": round(credito, 2)
             })
@@ -184,7 +174,6 @@ def gerar_inventario(empresa_codigo, caminho_saida):
         df.to_excel(caminho_saida, index=False, engine="openpyxl")
         return caminho_saida
 
-    # ✅ TIPAGEM (resolve erro do Excel)
     colunas_numericas = [
         "QTD NOTA", "QTD UTILIZADA",
         "VALOR UNITARIO", "VALOR TOTAL",
@@ -195,10 +184,153 @@ def gerar_inventario(empresa_codigo, caminho_saida):
         df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
     df = df.fillna("")
-
-    # ✅ ORDENAÇÃO FINAL
     df = df.sort_values(by=["NCM", "CODIGO", "NF"])
 
     df.to_excel(caminho_saida, index=False, engine="openpyxl")
 
     return caminho_saida
+
+def gerar_inventario_pdf(empresa_codigo, caminho_saida):
+    
+
+        # ✅ nome da empresa
+        with get_conn() as conn:
+            empresa = conn.execute(
+                "SELECT codigo, nome FROM empresa WHERE codigo = ?",
+                (empresa_codigo,)
+            ).fetchone()
+
+        empresa_nome = empresa[1] if empresa else ""
+
+        # ✅ gera base
+        caminho_temp = caminho_saida.replace(".pdf", "_temp.xlsx")
+        gerar_inventario(empresa_codigo, caminho_temp)
+
+        df = pd.read_excel(caminho_temp)
+
+        if df.empty:
+            return None
+
+        # ✅ remove .0 do NCM (DEFINITIVO)
+        df["NCM"] = (
+            pd.to_numeric(df["NCM"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        # ✅ ordena (importante pro agrupamento ficar correto)
+        df = df.sort_values(by=["NCM", "CODIGO", "NF"])
+
+        styles = getSampleStyleSheet()
+
+        doc = SimpleDocTemplate(
+            caminho_saida,
+            pagesize=landscape(A4),
+            leftMargin=10,
+            rightMargin=10,
+            topMargin=40,   # ✅ espaço pro header
+            bottomMargin=10
+        )
+
+        elements = []
+
+        # ✅ HEADER FIXO (AGORA EXISTE)
+        def header(canvas, doc):
+            canvas.setFont("Helvetica-Bold", 10)
+
+            canvas.drawString(
+                10,
+                570,
+                f"RELATÓRIO DE INVENTÁRIO | Empresa: {empresa_codigo} - {empresa_nome}"
+            )
+
+            page_num = canvas.getPageNumber()
+
+            canvas.drawRightString(
+                820,
+                570,
+                f"Página {page_num}"
+            )
+
+        colunas = list(df.columns)
+
+        # ✅ LARGURAS AJUSTADAS
+        col_widths = [
+            50,
+            300,  # ✅ descrição maior
+            65,
+            35,
+            45,
+            45,
+            45,
+            60,
+            65,
+            40,
+            60
+        ]
+
+        total_geral = 0
+        credito_geral = 0
+
+        # ✅ AGRUPAMENTO POR NCM
+        for ncm, grupo in df.groupby("NCM"):
+
+            elements.append(Paragraph(f"<b>NCM: {ncm}</b>", styles["Normal"]))
+            elements.append(Spacer(1, 4))
+
+            data = [colunas]
+
+            total_ncm = 0
+            credito_ncm = 0
+
+            for _, row in grupo.iterrows():
+
+                linha = []
+
+                for col in colunas:
+                    val = row[col]
+
+                    if isinstance(val, float):
+                        val = f"{val:.2f}"
+
+                    linha.append(str(val))
+
+                data.append(linha)
+
+                total_ncm += row["VALOR TOTAL"]
+                credito_ncm += row["VALOR DO CREDITO"]
+
+            total_geral += total_ncm
+            credito_geral += credito_ncm
+
+            tabela = Table(data, colWidths=col_widths, repeatRows=1)
+
+            tabela.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 4.2),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+            ]))
+
+            elements.append(tabela)
+
+            # ✅ TOTAL POR NCM
+            elements.append(Paragraph(
+                f"<b>TOTAL NCM {ncm} | VALOR: {total_ncm:.2f} | CRÉDITO: {credito_ncm:.2f}</b>",
+                styles["Normal"]
+            ))
+            elements.append(Spacer(1, 10))
+
+        # ✅ TOTAL GERAL
+        elements.append(Paragraph(
+            f"<b>TOTAL GERAL | VALOR: {total_geral:.2f} | CRÉDITO: {credito_geral:.2f}</b>",
+            styles["Normal"]
+        ))
+
+        # ✅ AQUI O HEADER É APLICADO
+        doc.build(elements, onFirstPage=header, onLaterPages=header)
+
+        return caminho_saida
