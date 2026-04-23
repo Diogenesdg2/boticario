@@ -7,9 +7,11 @@ from openpyxl.styles import PatternFill, Font
 
 OPERACAO_ENTRADA = "COMPRAS DE MERCADORIAS SEM FINANCEIRO"
 
-DEBUG = True  # ✅ controle de debug
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DEBUG_FILE = os.path.join(BASE_DIR, "debug.txt")
+DEBUG = True
+BASE_DIR = os.getcwd()
+
+DEBUG_FILE_NORMAL = os.path.join(BASE_DIR, "debug_normal.txt")
+DEBUG_FILE_SIMPLES = os.path.join(BASE_DIR, "debug_simples.txt")
 
 
 def to_float(valor):
@@ -92,8 +94,11 @@ def aliquota_eh_zero(valor):
 def gerar_excel_notas(empresa_codigo, caminho_saida):
 
     if DEBUG:
-        with open(DEBUG_FILE, "w", encoding="utf-8") as f:
-            f.write("DEBUG ICMS ST\n\n")
+        with open(DEBUG_FILE_NORMAL, "w", encoding="utf-8") as f:
+            f.write("DEBUG ICMS ST - NORMAL\n\n")
+
+        with open(DEBUG_FILE_SIMPLES, "w", encoding="utf-8") as f:
+            f.write("DEBUG ICMS ST - SIMPLES\n\n")
 
     with get_conn() as conn:
 
@@ -107,6 +112,9 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             (empresa_codigo,)
         ).fetchone()
         empresa_sn = empresa_sn[0] if empresa_sn else "N"
+
+        # ✅ CORREÇÃO AQUI
+        empresa_sn_flag = str(empresa_sn).strip().upper() in ["S", "SIM"]
 
         estoque_df = pd.read_sql_query(
             '''
@@ -202,7 +210,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         )
 
         acumulado = 0.0
-        encontrou_nota_valida = False
 
         for _, nota in notas_prod.iterrows():
 
@@ -214,8 +221,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
             if not numero_nota:
                 continue
-
-            encontrou_nota_valida = True
 
             if acumulado >= saldo:
                 break
@@ -241,8 +246,8 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 or ""
             )
 
-            # ✅ NOVA REGRA (PROPORCIONAL)
             bc_st_total = to_float(nota.get("base_de_calculo_do_icms_st_do_item"))
+            bc_icms = to_float(nota.get("base_de_calculo_do_icms_do_item"))
             qtd_total = qtd
 
             bc_st_proporcional = 0.0
@@ -256,25 +261,41 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
             credito_item_10 = 0.0
 
-            if aliquota > 0 and bc_st_proporcional > 0:
-                credito_item_10 = bc_st_proporcional * (aliquota / 100)
+            # ✅ SIMPLES
+            if empresa_sn_flag:
 
-            # ✅ DEBUG
-            if DEBUG:
-                debug_linha = (
-                    f"PRODUTO: {produto} | "
-                    f"BC_TOTAL: {bc_st_total} | "
-                    f"QTD_TOTAL: {qtd_total} | "
-                    f"QTD_UTIL: {qtd_utilizada} | "
-                    f"BC_PROP: {bc_st_proporcional} | "
-                    f"ALIQ: {aliquota} | "
-                    f"CREDITO: {credito_item_10}\n"
-                )
+                base_diff = bc_st_total - bc_icms
 
-                print(debug_linha)
+                valor_proporcional = 0.0
+                if qtd_total > 0:
+                    valor_proporcional = (base_diff / qtd_total) * qtd_utilizada
 
-                with open(DEBUG_FILE, "a", encoding="utf-8") as f:
-                    f.write(debug_linha)
+                if aliquota > 0 and valor_proporcional > 0:
+                    credito_item_10 = valor_proporcional * (aliquota / 100)
+
+                if DEBUG:
+                    with open(DEBUG_FILE_SIMPLES, "a", encoding="utf-8") as f:
+                        f.write(
+                            f"PRODUTO: {produto} | BC_ST: {bc_st_total} | BC_ICMS: {bc_icms} | "
+                            f"QTD: {qtd_total} | QTD_UTIL: {qtd_utilizada} | "
+                            f"BASE_PROP: {valor_proporcional} | ALIQ: {aliquota} | "
+                            f"CREDITO: {credito_item_10}\n"
+                        )
+
+            # ✅ NORMAL
+            else:
+
+                if aliquota > 0 and bc_st_proporcional > 0:
+                    credito_item_10 = bc_st_proporcional * (aliquota / 100)
+
+                if DEBUG:
+                    with open(DEBUG_FILE_NORMAL, "a", encoding="utf-8") as f:
+                        f.write(
+                            f"PRODUTO: {produto} | BC_ST: {bc_st_total} | "
+                            f"QTD: {qtd_total} | QTD_UTIL: {qtd_utilizada} | "
+                            f"BC_PROP: {bc_st_proporcional} | ALIQ: {aliquota} | "
+                            f"CREDITO: {credito_item_10}\n"
+                        )
 
             resultado.append({
                 "produto": produto,
