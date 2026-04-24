@@ -1,7 +1,7 @@
 import pandas as pd
 from database.db import get_conn
 from reportlab.lib.pagesizes import A4, landscape  
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageTemplate, Frame  
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib import colors  
 from reportlab.lib.styles import getSampleStyleSheet  
 from math import ceil 
@@ -155,6 +155,13 @@ def gerar_inventario(empresa_codigo, caminho_saida):
                 if aliquota > 0 and bc_prop > 0:
                     credito = bc_prop * (aliquota / 100)
 
+            # ✅ OBS ST (igual gerar.py)
+            obs_st = ""
+            if bc_st_total == 0:
+                obs_st = "ITEM SEM BASE ST"
+            elif bc_st_total == bc_icms:
+                obs_st = ""
+
             resultado.append({
                 "CODIGO": produto,
                 "DESCRICAO": nota.get("descricao_produto") or descricao_estoque,
@@ -166,7 +173,8 @@ def gerar_inventario(empresa_codigo, caminho_saida):
                 "VALOR UNITARIO": round(valor_unit, 2),
                 "VALOR TOTAL": round(valor_total, 2),
                 "ALIQ INTERNA": aliquota,
-                "VALOR DO CREDITO": round(credito, 2)
+                "VALOR DO CREDITO": round(credito, 2),
+                "OBS ST": obs_st
             })
 
     df = pd.DataFrame(resultado)
@@ -191,212 +199,193 @@ def gerar_inventario(empresa_codigo, caminho_saida):
 
     return caminho_saida
 
+
 def gerar_inventario_pdf(empresa_codigo, caminho_saida):
 
-        with get_conn() as conn:
-            empresa = conn.execute(
-                "SELECT codigo, razao_social, cnpj FROM empresa WHERE codigo = ?",
-                (empresa_codigo,)
-            ).fetchone()
+    with get_conn() as conn:
+        empresa = conn.execute(
+            "SELECT codigo, razao_social, cnpj FROM empresa WHERE codigo = ?",
+            (empresa_codigo,)
+        ).fetchone()
 
-        empresa_razao = empresa[1] if empresa else ""
-        empresa_cnpj = empresa[2] if empresa else ""
+    empresa_razao = empresa[1] if empresa else ""
+    empresa_cnpj = empresa[2] if empresa else ""
 
-        caminho_temp = caminho_saida.replace(".pdf", "_temp.xlsx")
-        gerar_inventario(empresa_codigo, caminho_temp)
+    caminho_temp = caminho_saida.replace(".pdf", "_temp.xlsx")
+    gerar_inventario(empresa_codigo, caminho_temp)
 
-        df = pd.read_excel(caminho_temp, engine="openpyxl")
+    df = pd.read_excel(caminho_temp, engine="openpyxl")
 
-        if df.empty:
-            return None
+    if df.empty:
+        return None
 
-        df["NCM"] = (
-            pd.to_numeric(df["NCM"], errors="coerce")
-            .fillna(0)
-            .astype(int)
-            .astype(str)
-        )
+    # ✅ REMOVE ITENS SEM ST DO PDF
+    df = df[df["OBS ST"] != "ITEM SEM BASE ST"]
 
-        df = df.sort_values(by=["NCM", "CODIGO", "NF"])
+    df["NCM"] = (
+        pd.to_numeric(df["NCM"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+        .astype(str)
+    )
 
-        styles = getSampleStyleSheet()
+    df = df.sort_values(by=["NCM", "CODIGO", "NF"])
 
-        doc = SimpleDocTemplate(
-            caminho_saida,
-            pagesize=landscape(A4),
-            leftMargin=10,
-            rightMargin=10,
-            topMargin=40,
-            bottomMargin=10
-        )
+    styles = getSampleStyleSheet()
 
-        elements = []
+    doc = SimpleDocTemplate(
+        caminho_saida,
+        pagesize=landscape(A4),
+        leftMargin=10,
+        rightMargin=10,
+        topMargin=40,
+        bottomMargin=10
+    )
 
-        def header(canvas, doc):
-            canvas.setFont("Helvetica-Bold", 10)
-            canvas.drawString(10, 570, "RELATÓRIO DE INVENTÁRIO")
+    elements = []
 
-            canvas.setFont("Helvetica", 8)
-            canvas.drawString(10, 555, f"{empresa_razao} | CNPJ: {empresa_cnpj}")
+    def header(canvas, doc):
+        canvas.setFont("Helvetica-Bold", 10)
+        canvas.drawString(10, 570, "RELATÓRIO DE INVENTÁRIO")
 
-            canvas.drawRightString(
-                820,
-                570,
-                f"Página {canvas.getPageNumber()}"
-            )
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(10, 555, f"{empresa_razao} | CNPJ: {empresa_cnpj}")
 
-        colunas = list(df.columns)
+        canvas.drawRightString(820, 570, f"Página {canvas.getPageNumber()}")
 
-        col_widths = [
-            50, 300, 65, 35, 45, 45, 45, 60, 65, 40, 60
-        ]
+    colunas = [c for c in df.columns if c != "OBS ST"]
+    df = df[colunas]
 
-        total_geral = 0
-        credito_geral = 0
+    col_widths = [50, 300, 65, 35, 45, 45, 45, 60, 65, 40, 60, 80]
 
-        resumo_ncm = []
+    total_geral = 0
+    credito_geral = 0
 
-        # 🔎 detectar coluna de alíquota automaticamente
-        col_aliq = None
-        for c in df.columns:
-            if "aliq" in c.lower():
-                col_aliq = c
-                break
+    resumo_ncm = []
 
-        for ncm, grupo in df.groupby("NCM"):
+    col_aliq = None
+    for c in df.columns:
+        if "aliq" in c.lower():
+            col_aliq = c
+            break
 
-            elements.append(Paragraph(f"<b>NCM: {ncm}</b>", styles["Normal"]))
-            elements.append(Spacer(1, 4))
+    for ncm, grupo in df.groupby("NCM"):
 
-            data = [colunas]
+        elements.append(Paragraph(f"<b>NCM: {ncm}</b>", styles["Normal"]))
+        elements.append(Spacer(1, 4))
 
-            total_ncm = 0
-            credito_ncm = 0
+        data = [colunas]
 
-            # ✅ pega alíquota correta
-            if col_aliq:
-                aliquota = grupo[col_aliq].dropna().iloc[0]
-            else:
-                aliquota = ""
+        total_ncm = 0
+        credito_ncm = 0
 
-            for _, row in grupo.iterrows():
+        aliquota = grupo[col_aliq].dropna().iloc[0] if col_aliq else ""
 
-                linha = []
+        for _, row in grupo.iterrows():
 
-                for col in colunas:
-                    val = row[col]
+            linha = []
+            for col in colunas:
+                val = row[col]
+                if isinstance(val, float):
+                    val = f"{val:.2f}"
+                linha.append(str(val))
 
-                    if isinstance(val, float):
-                        val = f"{val:.2f}"
+            data.append(linha)
 
-                    linha.append(str(val))
+            total_ncm += row["VALOR TOTAL"]
+            credito_ncm += row["VALOR DO CREDITO"]
 
-                data.append(linha)
+        total_geral += total_ncm
+        credito_geral += credito_ncm
 
-                total_ncm += row["VALOR TOTAL"]
-                credito_ncm += row["VALOR DO CREDITO"]
+        resumo_ncm.append((ncm, aliquota, total_ncm, credito_ncm))
 
-            total_geral += total_ncm
-            credito_geral += credito_ncm
+        tabela = Table(data, colWidths=col_widths, repeatRows=1)
 
-            resumo_ncm.append((ncm, aliquota, total_ncm, credito_ncm))
-
-            tabela = Table(data, colWidths=col_widths, repeatRows=1)
-
-            tabela.setStyle(TableStyle([
-                ("BACKGROUND", (0, 0), (-1, 0), colors.black),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 4.2),
-                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-            ]))
-
-            elements.append(tabela)
-
-            # ✅ TOTAL NCM menor
-            elements.append(Paragraph(
-                f"<font size=7><b>TOTAL NCM {ncm} | VALOR: {total_ncm:.2f} | CRÉDITO: {credito_ncm:.2f}</b></font>",
-                styles["Normal"]
-            ))
-            elements.append(Spacer(1, 8))
-
-        # ✅ RESUMO FINAL (fonte m# ✅ RESUMO FINAL
-        elements.append(Spacer(1, 15))
-        elements.append(Paragraph("<b>RESUMO GERAL POR NCM</b>", styles["Normal"]))
-        elements.append(Spacer(1, 5))
-
-        def to_float(valor):
-            try:
-                return float(valor)
-            except:
-                return 0.0
-
-        dados = [
-            (ncm, aliq, to_float(total), to_float(credito))
-            for ncm, aliq, total, credito in resumo_ncm
-        ]
-
-        metade = ceil(len(dados) / 2)
-
-        coluna1 = dados[:metade]
-        coluna2 = dados[metade:]
-
-        while len(coluna2) < len(coluna1):
-            coluna2.append(("", "", 0.0, 0.0))
-
-        # ✅ cabeçalho
-        resumo_data = [[
-            "NCM", "ALÍQUOTA", "VALOR TOTAL", "CRÉDITO",
-            "",
-            "NCM", "ALÍQUOTA", "VALOR TOTAL", "CRÉDITO"
-        ]]
-
-        # ✅ linhas
-        for i in range(len(coluna1)):
-            ncm1, aliq1, tot1, cred1 = coluna1[i]
-            ncm2, aliq2, tot2, cred2 = coluna2[i]
-
-            resumo_data.append([
-                ncm1 or "", aliq1 or "", f"{tot1:.2f}", f"{cred1:.2f}",
-                "",
-                ncm2 or "", aliq2 or "", f"{tot2:.2f}", f"{cred2:.2f}"
-            ])
-
-        tabela_resumo = Table(
-            resumo_data,
-            colWidths=[55, 55, 85, 85, 20, 55, 55, 85, 85]
-        )
-
-        tabela_resumo.setStyle(TableStyle([
+        tabela.setStyle(TableStyle([
             ("BACKGROUND", (0, 0), (-1, 0), colors.black),
             ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
             ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-
-            ("FONTSIZE", (0, 0), (-1, -1), 5.5),
-
+            ("FONTSIZE", (0, 0), (-1, -1), 4.2),
             ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-
             ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-
-            # ✅ remove linha da coluna do meio (espaço)
-            ("GRID", (4, 0), (4, -1), 0, colors.white),
-
-            ("LEFTPADDING", (0, 0), (-1, -1), 2),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-            ("TOPPADDING", (0, 0), (-1, -1), 1),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
         ]))
 
-        elements.append(tabela_resumo)
+        elements.append(tabela)
 
-        elements.append(Spacer(1, 8))
         elements.append(Paragraph(
-            f"<font size=8><b>TOTAL GERAL | VALOR: {total_geral:.2f} | CRÉDITO: {credito_geral:.2f}</b></font>",
+            f"<font size=7><b>TOTAL NCM {ncm} | VALOR: {total_ncm:.2f} | CRÉDITO: {credito_ncm:.2f}</b></font>",
             styles["Normal"]
         ))
+        elements.append(Spacer(1, 8))
 
+    elements.append(PageBreak())
+    elements.append(Spacer(1, 15))
+    elements.append(Paragraph("<b>RESUMO GERAL POR NCM</b>", styles["Normal"]))
+    elements.append(Spacer(1, 5))
 
-        doc.build(elements, onFirstPage=header, onLaterPages=header)
+    def to_float_local(valor):
+        try:
+            return float(valor)
+        except:
+            return 0.0
 
-        return caminho_saida
+    dados = [
+        (ncm, aliq, to_float_local(total), to_float_local(credito))
+        for ncm, aliq, total, credito in resumo_ncm
+    ]
+
+    metade = ceil(len(dados) / 2)
+
+    coluna1 = dados[:metade]
+    coluna2 = dados[metade:]
+
+    while len(coluna2) < len(coluna1):
+        coluna2.append(("", "", 0.0, 0.0))
+
+    resumo_data = [[
+        "NCM", "ALÍQUOTA", "VALOR TOTAL", "CRÉDITO",
+        "",
+        "NCM", "ALÍQUOTA", "VALOR TOTAL", "CRÉDITO"
+    ]]
+
+    for i in range(len(coluna1)):
+        ncm1, aliq1, tot1, cred1 = coluna1[i]
+        ncm2, aliq2, tot2, cred2 = coluna2[i]
+
+        resumo_data.append([
+            ncm1 or "", aliq1 or "", f"{tot1:.2f}", f"{cred1:.2f}",
+            "",
+            ncm2 or "", aliq2 or "", f"{tot2:.2f}", f"{cred2:.2f}"
+        ])
+
+    tabela_resumo = Table(
+        resumo_data,
+        colWidths=[55, 55, 85, 85, 20, 55, 55, 85, 85]
+    )
+
+    tabela_resumo.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 5.5),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        ("GRID", (4, 0), (4, -1), 0, colors.white),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+    ]))
+
+    elements.append(tabela_resumo)
+
+    elements.append(Spacer(1, 8))
+    elements.append(Paragraph(
+        f"<font size=8><b>TOTAL GERAL | VALOR: {total_geral:.2f} | CRÉDITO: {credito_geral:.2f}</b></font>",
+        styles["Normal"]
+    ))
+
+    doc.build(elements, onFirstPage=header, onLaterPages=header)
+
+    return caminho_saida

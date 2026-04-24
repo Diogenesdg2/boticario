@@ -10,9 +10,6 @@ OPERACAO_ENTRADA = "COMPRAS DE MERCADORIAS SEM FINANCEIRO"
 DEBUG = True
 BASE_DIR = os.getcwd()
 
-DEBUG_FILE_NORMAL = os.path.join(BASE_DIR, "debug_normal.txt")
-DEBUG_FILE_SIMPLES = os.path.join(BASE_DIR, "debug_simples.txt")
-
 
 def to_float(valor):
     try:
@@ -93,19 +90,18 @@ def aliquota_eh_zero(valor):
 
 def gerar_excel_notas(empresa_codigo, caminho_saida):
 
-    if DEBUG:
-        with open(DEBUG_FILE_NORMAL, "w", encoding="utf-8") as f:
-            f.write("DEBUG ICMS ST - NORMAL\n\n")
-
-        with open(DEBUG_FILE_SIMPLES, "w", encoding="utf-8") as f:
-            f.write("DEBUG ICMS ST - SIMPLES\n\n")
-
     with get_conn() as conn:
 
         empresa_info = conn.execute(
             "SELECT codigo, nome FROM empresa WHERE codigo = ?",
             (empresa_codigo,)
         ).fetchone()
+
+        nome_empresa = "EMPRESA"
+        if empresa_info and empresa_info[1]:
+            nome_empresa = str(empresa_info[1]).strip().replace(" ", "_")
+
+        DEBUG_FILE = os.path.join(BASE_DIR, f"{nome_empresa}_MEMORIA_DE_CALCULO.txt")
 
         empresa_sn = conn.execute(
             "SELECT simples_nacional FROM empresa WHERE codigo = ?",
@@ -114,6 +110,14 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         empresa_sn = empresa_sn[0] if empresa_sn else "N"
 
         empresa_sn_flag = str(empresa_sn).strip().upper() in ["S", "SIM"]
+
+        # ✅ inicia debug corretamente
+        if DEBUG:
+            with open(DEBUG_FILE, "w", encoding="utf-8") as f:
+                regime = "SIMPLES NACIONAL" if empresa_sn_flag else "REGIME NORMAL"
+                f.write("MEMORIA DE CALCULO ICMS ST\n")
+                f.write(f"EMPRESA: {nome_empresa}\n")
+                f.write(f"REGIME: {regime}\n\n")
 
         estoque_df = pd.read_sql_query(
             '''
@@ -247,7 +251,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 or ""
             )
 
-            # ✅ NOVO CAMPO VALOR UNITÁRIO
             valor_unitario = to_float(
                 nota.get("valor_unitario")
                 or nota.get("valor_unitario_do_item")
@@ -272,27 +275,50 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             credito_item_10 = 0.0
 
             if empresa_sn_flag:
-
                 base_diff = bc_st_total - bc_icms
-
-                valor_proporcional = 0.0
-                if qtd_total > 0:
-                    valor_proporcional = (base_diff / qtd_total) * qtd_utilizada
-
+                valor_proporcional = (base_diff / qtd_total) * qtd_utilizada if qtd_total > 0 else 0
                 if aliquota > 0 and valor_proporcional > 0:
                     credito_item_10 = valor_proporcional * (aliquota / 100)
-
             else:
-
                 if aliquota > 0 and bc_st_proporcional > 0:
                     credito_item_10 = bc_st_proporcional * (aliquota / 100)
 
-            # ✅ OBS ST
             obs_st = ""
             if bc_st_total == 0:
                 obs_st = "ITEM SEM BASE ST"
             elif bc_st_total == bc_icms:
                 obs_st = ""
+
+            # ✅ escreve debug por item
+            if DEBUG:
+                with open(DEBUG_FILE, "a", encoding="utf-8") as f:
+
+                    if empresa_sn_flag:
+                        # ✅ SIMPLES NACIONAL
+                        f.write(
+                            f"PRODUTO: {produto}\n"
+                            f"BC_ST: {bc_st_total}\n"
+                            f"BC_ICMS: {bc_icms}\n"
+                            f"QTD NA NOTA: {qtd_total}\n"
+                            f"QTD: {qtd_utilizada}\n"
+                            f"BASE_PROP: {round(valor_proporcional, 2)}\n"
+                            f"ALIQ: {aliquota}\n"
+                            f"CREDITO: {round(credito_item_10, 2)}\n"
+                            f"{'-'*50}\n"
+                        )
+
+                    else:
+                        # ✅ REGIME NORMAL
+                        f.write(
+                            f"PRODUTO: {produto}\n"
+                            f"BC_ST: {bc_st_total}\n"
+                            f"QTD NA NOTA: {qtd_total}\n"
+                            f"QTD: {qtd_utilizada}\n"
+                            f"BASE_PROP: {round(bc_st_proporcional, 2)}\n"
+                            f"ALIQ: {aliquota}\n"
+                            f"CREDITO: {round(credito_item_10, 2)}\n"
+                            f"{'-'*50}\n"
+                        )
 
             resultado.append({
                 "produto": produto,
@@ -377,13 +403,8 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         elif aliquota_eh_zero(valor_aliq):
             row[idx_aliq - 1].fill = fill_amarelo
 
-        # ✅ destaque OBS ST
         valor_obs = row[idx_obs - 1].value
         if valor_obs == "ITEM SEM BASE ST":
             row[idx_obs - 1].font = fonte_vermelha
-        elif valor_obs == "SEM DIFERENÇA ST":
-            row[idx_obs - 1].fill = fill_amarelo
 
     wb.save(caminho_saida)
-
-    return caminho_saida
