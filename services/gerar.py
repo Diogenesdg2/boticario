@@ -113,7 +113,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
         ).fetchone()
         empresa_sn = empresa_sn[0] if empresa_sn else "N"
 
-        # ✅ CORREÇÃO AQUI
         empresa_sn_flag = str(empresa_sn).strip().upper() in ["S", "SIM"]
 
         estoque_df = pd.read_sql_query(
@@ -200,7 +199,9 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "estoque": saldo,
                 "cobriu_estoque": False,
                 "unidade_medida": "",
-                "Credito - item 10": 0.0
+                "valor_unitario": 0.0,
+                "Credito - item 10": 0.0,
+                "OBS ST": ""
             })
             continue
 
@@ -246,6 +247,15 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 or ""
             )
 
+            # ✅ NOVO CAMPO VALOR UNITÁRIO
+            valor_unitario = to_float(
+                nota.get("valor_unitario")
+                or nota.get("valor_unitario_do_item")
+                or nota.get("vunit")
+                or nota.get("preco_unitario")
+                or 0
+            )
+
             bc_st_total = to_float(nota.get("base_de_calculo_do_icms_st_do_item"))
             bc_icms = to_float(nota.get("base_de_calculo_do_icms_do_item"))
             qtd_total = qtd
@@ -261,7 +271,6 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
 
             credito_item_10 = 0.0
 
-            # ✅ SIMPLES
             if empresa_sn_flag:
 
                 base_diff = bc_st_total - bc_icms
@@ -273,29 +282,17 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 if aliquota > 0 and valor_proporcional > 0:
                     credito_item_10 = valor_proporcional * (aliquota / 100)
 
-                if DEBUG:
-                    with open(DEBUG_FILE_SIMPLES, "a", encoding="utf-8") as f:
-                        f.write(
-                            f"PRODUTO: {produto} | BC_ST: {bc_st_total} | BC_ICMS: {bc_icms} | "
-                            f"QTD: {qtd_total} | QTD_UTIL: {qtd_utilizada} | "
-                            f"BASE_PROP: {valor_proporcional} | ALIQ: {aliquota} | "
-                            f"CREDITO: {credito_item_10}\n"
-                        )
-
-            # ✅ NORMAL
             else:
 
                 if aliquota > 0 and bc_st_proporcional > 0:
                     credito_item_10 = bc_st_proporcional * (aliquota / 100)
 
-                if DEBUG:
-                    with open(DEBUG_FILE_NORMAL, "a", encoding="utf-8") as f:
-                        f.write(
-                            f"PRODUTO: {produto} | BC_ST: {bc_st_total} | "
-                            f"QTD: {qtd_total} | QTD_UTIL: {qtd_utilizada} | "
-                            f"BC_PROP: {bc_st_proporcional} | ALIQ: {aliquota} | "
-                            f"CREDITO: {credito_item_10}\n"
-                        )
+            # ✅ OBS ST
+            obs_st = ""
+            if bc_st_total == 0:
+                obs_st = "ITEM SEM BASE ST"
+            elif bc_st_total == bc_icms:
+                obs_st = ""
 
             resultado.append({
                 "produto": produto,
@@ -314,7 +311,9 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
                 "estoque": saldo,
                 "cobriu_estoque": acumulado >= saldo,
                 "unidade_medida": unidade,
-                "Credito - item 10": round(credito_item_10, 2)
+                "valor_unitario": valor_unitario,
+                "Credito - item 10": round(credito_item_10, 2),
+                "OBS ST": obs_st
             })
 
     df_final = pd.DataFrame(resultado)
@@ -363,6 +362,7 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
     headers = [cell.value for cell in ws[2]]
     idx_flag = headers.index("cobriu_estoque") + 1
     idx_aliq = headers.index("Alíquota") + 1
+    idx_obs = headers.index("OBS ST") + 1
 
     for row in ws.iter_rows(min_row=3):
 
@@ -376,6 +376,13 @@ def gerar_excel_notas(empresa_codigo, caminho_saida):
             row[idx_aliq - 1].font = fonte_vermelha
         elif aliquota_eh_zero(valor_aliq):
             row[idx_aliq - 1].fill = fill_amarelo
+
+        # ✅ destaque OBS ST
+        valor_obs = row[idx_obs - 1].value
+        if valor_obs == "ITEM SEM BASE ST":
+            row[idx_obs - 1].font = fonte_vermelha
+        elif valor_obs == "SEM DIFERENÇA ST":
+            row[idx_obs - 1].fill = fill_amarelo
 
     wb.save(caminho_saida)
 
