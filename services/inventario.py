@@ -4,6 +4,7 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageTemplate, Frame  
 from reportlab.lib import colors  
 from reportlab.lib.styles import getSampleStyleSheet  
+from math import ceil 
 
 from services.gerar import (
     to_float,
@@ -191,27 +192,24 @@ def gerar_inventario(empresa_codigo, caminho_saida):
     return caminho_saida
 
 def gerar_inventario_pdf(empresa_codigo, caminho_saida):
-    
 
-        # ✅ nome da empresa
         with get_conn() as conn:
             empresa = conn.execute(
-                "SELECT codigo, nome FROM empresa WHERE codigo = ?",
+                "SELECT codigo, razao_social, cnpj FROM empresa WHERE codigo = ?",
                 (empresa_codigo,)
             ).fetchone()
 
-        empresa_nome = empresa[1] if empresa else ""
+        empresa_razao = empresa[1] if empresa else ""
+        empresa_cnpj = empresa[2] if empresa else ""
 
-        # ✅ gera base
         caminho_temp = caminho_saida.replace(".pdf", "_temp.xlsx")
         gerar_inventario(empresa_codigo, caminho_temp)
 
-        df = pd.read_excel(caminho_temp)
+        df = pd.read_excel(caminho_temp, engine="openpyxl")
 
         if df.empty:
             return None
 
-        # ✅ remove .0 do NCM (DEFINITIVO)
         df["NCM"] = (
             pd.to_numeric(df["NCM"], errors="coerce")
             .fillna(0)
@@ -219,7 +217,6 @@ def gerar_inventario_pdf(empresa_codigo, caminho_saida):
             .astype(str)
         )
 
-        # ✅ ordena (importante pro agrupamento ficar correto)
         df = df.sort_values(by=["NCM", "CODIGO", "NF"])
 
         styles = getSampleStyleSheet()
@@ -229,51 +226,43 @@ def gerar_inventario_pdf(empresa_codigo, caminho_saida):
             pagesize=landscape(A4),
             leftMargin=10,
             rightMargin=10,
-            topMargin=40,   # ✅ espaço pro header
+            topMargin=40,
             bottomMargin=10
         )
 
         elements = []
 
-        # ✅ HEADER FIXO (AGORA EXISTE)
         def header(canvas, doc):
             canvas.setFont("Helvetica-Bold", 10)
+            canvas.drawString(10, 570, "RELATÓRIO DE INVENTÁRIO")
 
-            canvas.drawString(
-                10,
-                570,
-                f"RELATÓRIO DE INVENTÁRIO | Empresa: {empresa_codigo} - {empresa_nome}"
-            )
-
-            page_num = canvas.getPageNumber()
+            canvas.setFont("Helvetica", 8)
+            canvas.drawString(10, 555, f"{empresa_razao} | CNPJ: {empresa_cnpj}")
 
             canvas.drawRightString(
                 820,
                 570,
-                f"Página {page_num}"
+                f"Página {canvas.getPageNumber()}"
             )
 
         colunas = list(df.columns)
 
-        # ✅ LARGURAS AJUSTADAS
         col_widths = [
-            50,
-            300,  # ✅ descrição maior
-            65,
-            35,
-            45,
-            45,
-            45,
-            60,
-            65,
-            40,
-            60
+            50, 300, 65, 35, 45, 45, 45, 60, 65, 40, 60
         ]
 
         total_geral = 0
         credito_geral = 0
 
-        # ✅ AGRUPAMENTO POR NCM
+        resumo_ncm = []
+
+        # 🔎 detectar coluna de alíquota automaticamente
+        col_aliq = None
+        for c in df.columns:
+            if "aliq" in c.lower():
+                col_aliq = c
+                break
+
         for ncm, grupo in df.groupby("NCM"):
 
             elements.append(Paragraph(f"<b>NCM: {ncm}</b>", styles["Normal"]))
@@ -283,6 +272,12 @@ def gerar_inventario_pdf(empresa_codigo, caminho_saida):
 
             total_ncm = 0
             credito_ncm = 0
+
+            # ✅ pega alíquota correta
+            if col_aliq:
+                aliquota = grupo[col_aliq].dropna().iloc[0]
+            else:
+                aliquota = ""
 
             for _, row in grupo.iterrows():
 
@@ -304,6 +299,8 @@ def gerar_inventario_pdf(empresa_codigo, caminho_saida):
             total_geral += total_ncm
             credito_geral += credito_ncm
 
+            resumo_ncm.append((ncm, aliquota, total_ncm, credito_ncm))
+
             tabela = Table(data, colWidths=col_widths, repeatRows=1)
 
             tabela.setStyle(TableStyle([
@@ -317,20 +314,89 @@ def gerar_inventario_pdf(empresa_codigo, caminho_saida):
 
             elements.append(tabela)
 
-            # ✅ TOTAL POR NCM
+            # ✅ TOTAL NCM menor
             elements.append(Paragraph(
-                f"<b>TOTAL NCM {ncm} | VALOR: {total_ncm:.2f} | CRÉDITO: {credito_ncm:.2f}</b>",
+                f"<font size=7><b>TOTAL NCM {ncm} | VALOR: {total_ncm:.2f} | CRÉDITO: {credito_ncm:.2f}</b></font>",
                 styles["Normal"]
             ))
-            elements.append(Spacer(1, 10))
+            elements.append(Spacer(1, 8))
 
-        # ✅ TOTAL GERAL
+        # ✅ RESUMO FINAL (fonte m# ✅ RESUMO FINAL
+        elements.append(Spacer(1, 15))
+        elements.append(Paragraph("<b>RESUMO GERAL POR NCM</b>", styles["Normal"]))
+        elements.append(Spacer(1, 5))
+
+        def to_float(valor):
+            try:
+                return float(valor)
+            except:
+                return 0.0
+
+        dados = [
+            (ncm, aliq, to_float(total), to_float(credito))
+            for ncm, aliq, total, credito in resumo_ncm
+        ]
+
+        metade = ceil(len(dados) / 2)
+
+        coluna1 = dados[:metade]
+        coluna2 = dados[metade:]
+
+        while len(coluna2) < len(coluna1):
+            coluna2.append(("", "", 0.0, 0.0))
+
+        # ✅ cabeçalho
+        resumo_data = [[
+            "NCM", "ALÍQUOTA", "VALOR TOTAL", "CRÉDITO",
+            "",
+            "NCM", "ALÍQUOTA", "VALOR TOTAL", "CRÉDITO"
+        ]]
+
+        # ✅ linhas
+        for i in range(len(coluna1)):
+            ncm1, aliq1, tot1, cred1 = coluna1[i]
+            ncm2, aliq2, tot2, cred2 = coluna2[i]
+
+            resumo_data.append([
+                ncm1 or "", aliq1 or "", f"{tot1:.2f}", f"{cred1:.2f}",
+                "",
+                ncm2 or "", aliq2 or "", f"{tot2:.2f}", f"{cred2:.2f}"
+            ])
+
+        tabela_resumo = Table(
+            resumo_data,
+            colWidths=[55, 55, 85, 85, 20, 55, 55, 85, 85]
+        )
+
+        tabela_resumo.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.black),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+
+            ("FONTSIZE", (0, 0), (-1, -1), 5.5),
+
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+
+            ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+
+            # ✅ remove linha da coluna do meio (espaço)
+            ("GRID", (4, 0), (4, -1), 0, colors.white),
+
+            ("LEFTPADDING", (0, 0), (-1, -1), 2),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+            ("TOPPADDING", (0, 0), (-1, -1), 1),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ]))
+
+        elements.append(tabela_resumo)
+
+        elements.append(Spacer(1, 8))
         elements.append(Paragraph(
-            f"<b>TOTAL GERAL | VALOR: {total_geral:.2f} | CRÉDITO: {credito_geral:.2f}</b>",
+            f"<font size=8><b>TOTAL GERAL | VALOR: {total_geral:.2f} | CRÉDITO: {credito_geral:.2f}</b></font>",
             styles["Normal"]
         ))
 
-        # ✅ AQUI O HEADER É APLICADO
+
         doc.build(elements, onFirstPage=header, onLaterPages=header)
 
         return caminho_saida
