@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from database.db import get_conn
+import re
 
 
 class TelaEmpresas(ttk.Frame):
@@ -9,6 +10,9 @@ class TelaEmpresas(ttk.Frame):
         self._build()
 
     def _build(self):
+        self.columnconfigure(1, weight=1)
+        self.rowconfigure(8, weight=1)
+
         ttk.Label(self, text="Cadastro de Empresas", font=("Segoe UI", 14, "bold")).grid(
             row=0, column=0, columnspan=3, sticky="w", pady=(0, 16)
         )
@@ -19,29 +23,37 @@ class TelaEmpresas(ttk.Frame):
 
         ttk.Label(self, text="Nome:").grid(row=2, column=0, sticky="w")
         self.ent_nome = ttk.Entry(self, width=45)
-        self.ent_nome.grid(row=2, column=1, sticky="w", padx=8, pady=4)
+        self.ent_nome.grid(row=2, column=1, sticky="ew", padx=8, pady=4)
 
-        # ✅ Simples
-        ttk.Label(self, text="Simples Nacional:").grid(row=3, column=0, sticky="w")
+        ttk.Label(self, text="Razão Social:").grid(row=3, column=0, sticky="w")
+        self.ent_razao = ttk.Entry(self, width=45)
+        self.ent_razao.grid(row=3, column=1, sticky="ew", padx=8, pady=4)
+
+        ttk.Label(self, text="CNPJ:").grid(row=4, column=0, sticky="w")
+        self.ent_cnpj = ttk.Entry(self, width=25)
+        self.ent_cnpj.grid(row=4, column=1, sticky="w", padx=8, pady=4)
+
+        # ✅ máscara automática
+        self.ent_cnpj.bind("<KeyRelease>", self._mascara_cnpj)
+
+        ttk.Label(self, text="Simples Nacional:").grid(row=5, column=0, sticky="w")
         self.simples_var = tk.StringVar(value="Não")
         ttk.Combobox(self, textvariable=self.simples_var,
-                     values=["Sim", "Não"], state="readonly").grid(row=3, column=1, sticky="w", padx=8, pady=4)
-
-        # ✅ Tipo operação
-        ttk.Label(self, text="Tipo da operação:").grid(row=4, column=0, sticky="w")
-        self.tipo_operacao_var = tk.StringVar(value="Interna")
-        ttk.Combobox(self, textvariable=self.tipo_operacao_var,
-                     values=["Interna", "Interestadual"], state="readonly").grid(row=4, column=1, sticky="w", padx=8, pady=4)
-
-        # ✅ Redução base
-        ttk.Label(self, text="Redução de base:").grid(row=5, column=0, sticky="w")
-        self.reducao_base_var = tk.StringVar(value="Não")
-        ttk.Combobox(self, textvariable=self.reducao_base_var,
                      values=["Sim", "Não"], state="readonly").grid(row=5, column=1, sticky="w", padx=8, pady=4)
 
-        # Botões
+        ttk.Label(self, text="Tipo da operação:").grid(row=6, column=0, sticky="w")
+        self.tipo_operacao_var = tk.StringVar(value="Interna")
+        ttk.Combobox(self, textvariable=self.tipo_operacao_var,
+                     values=["Interna", "Interestadual"], state="readonly").grid(row=6, column=1, sticky="w", padx=8, pady=4)
+
+        ttk.Label(self, text="Redução de base:").grid(row=7, column=0, sticky="w")
+        self.reducao_base_var = tk.StringVar(value="Não")
+        ttk.Combobox(self, textvariable=self.reducao_base_var,
+                     values=["Sim", "Não"], state="readonly").grid(row=7, column=1, sticky="w", padx=8, pady=4)
+
+        # ✅ BOTÕES (agora aparecem certo)
         btn_frame = ttk.Frame(self)
-        btn_frame.grid(row=1, column=2, rowspan=5, padx=12, sticky="ns")
+        btn_frame.grid(row=1, column=2, rowspan=7, padx=12, sticky="n")
 
         self.btn_salvar = ttk.Button(btn_frame, text="💾 Salvar", command=self._salvar)
         self.btn_salvar.pack(fill="x", pady=4)
@@ -51,31 +63,61 @@ class TelaEmpresas(ttk.Frame):
 
         ttk.Button(btn_frame, text="🆕 Novo", command=self._limpar).pack(fill="x", pady=4)
 
-        # Tabela
+        # ✅ TABELA
         self.tree = ttk.Treeview(
             self,
-            columns=("codigo", "nome", "simples", "tipo", "reducao"),
+            columns=("codigo", "nome", "razao", "cnpj", "simples", "tipo", "reducao"),
             show="headings"
         )
 
         self.tree.heading("codigo", text="Código")
         self.tree.heading("nome", text="Nome")
+        self.tree.heading("razao", text="Razão Social")
+        self.tree.heading("cnpj", text="CNPJ")
         self.tree.heading("simples", text="Simples")
         self.tree.heading("tipo", text="Operação")
         self.tree.heading("reducao", text="Redução")
 
-        self.tree.grid(row=6, column=0, columnspan=3, sticky="nsew", pady=10)
+        self.tree.grid(row=8, column=0, columnspan=3, sticky="nsew", pady=10)
 
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
 
         self._carregar()
+
+    # ✅ MÁSCARA CNPJ
+    def _mascara_cnpj(self, event):
+        cnpj = re.sub(r"\D", "", self.ent_cnpj.get())
+
+        if len(cnpj) > 14:
+            cnpj = cnpj[:14]
+
+        formatado = ""
+
+        if len(cnpj) >= 1:
+            formatado = cnpj[:2]
+        if len(cnpj) >= 3:
+            formatado += "." + cnpj[2:5]
+        if len(cnpj) >= 6:
+            formatado += "." + cnpj[5:8]
+        if len(cnpj) >= 9:
+            formatado += "/" + cnpj[8:12]
+        if len(cnpj) >= 13:
+            formatado += "-" + cnpj[12:14]
+
+        self.ent_cnpj.delete(0, "end")
+        self.ent_cnpj.insert(0, formatado)
+
+    # ✅ VALIDAÇÃO SIMPLES
+    def _cnpj_valido(self, cnpj):
+        cnpj = re.sub(r"\D", "", cnpj)
+        return len(cnpj) == 14
 
     def _carregar(self):
         self.tree.delete(*self.tree.get_children())
 
         with get_conn() as conn:
             rows = conn.execute("""
-                SELECT codigo, nome, simples_nacional, tipo_operacao, reducao_base
+                SELECT codigo, nome, razao_social, cnpj, simples_nacional, tipo_operacao, reducao_base
                 FROM empresa
                 ORDER BY codigo
             """).fetchall()
@@ -96,9 +138,15 @@ class TelaEmpresas(ttk.Frame):
         self.ent_nome.delete(0, "end")
         self.ent_nome.insert(0, vals[1])
 
-        self.simples_var.set(vals[2])
-        self.tipo_operacao_var.set(vals[3])
-        self.reducao_base_var.set(vals[4])
+        self.ent_razao.delete(0, "end")
+        self.ent_razao.insert(0, vals[2])
+
+        self.ent_cnpj.delete(0, "end")
+        self.ent_cnpj.insert(0, vals[3])
+
+        self.simples_var.set(vals[4])
+        self.tipo_operacao_var.set(vals[5])
+        self.reducao_base_var.set(vals[6])
 
         self.btn_salvar.config(state="disabled")
         self.btn_editar.config(state="normal")
@@ -106,18 +154,25 @@ class TelaEmpresas(ttk.Frame):
     def _salvar(self):
         codigo = self.ent_codigo.get().strip()
         nome = self.ent_nome.get().strip()
+        cnpj = self.ent_cnpj.get().strip()
 
         if not codigo or not nome:
             messagebox.showwarning("Atenção", "Informe código e nome")
             return
 
+        if cnpj and not self._cnpj_valido(cnpj):
+            messagebox.showwarning("Atenção", "CNPJ inválido")
+            return
+
         with get_conn() as conn:
             conn.execute("""
-                INSERT INTO empresa (codigo, nome, simples_nacional, tipo_operacao, reducao_base)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO empresa (codigo, nome, razao_social, cnpj, simples_nacional, tipo_operacao, reducao_base)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 codigo,
                 nome,
+                self.ent_razao.get(),
+                cnpj,
                 self.simples_var.get(),
                 self.tipo_operacao_var.get(),
                 self.reducao_base_var.get()
@@ -128,14 +183,21 @@ class TelaEmpresas(ttk.Frame):
 
     def _editar(self):
         codigo = self.ent_codigo.get().strip()
+        cnpj = self.ent_cnpj.get().strip()
+
+        if cnpj and not self._cnpj_valido(cnpj):
+            messagebox.showwarning("Atenção", "CNPJ inválido")
+            return
 
         with get_conn() as conn:
             conn.execute("""
                 UPDATE empresa
-                SET nome = ?, simples_nacional = ?, tipo_operacao = ?, reducao_base = ?
+                SET nome = ?, razao_social = ?, cnpj = ?, simples_nacional = ?, tipo_operacao = ?, reducao_base = ?
                 WHERE codigo = ?
             """, (
                 self.ent_nome.get(),
+                self.ent_razao.get(),
+                cnpj,
                 self.simples_var.get(),
                 self.tipo_operacao_var.get(),
                 self.reducao_base_var.get(),
@@ -148,6 +210,8 @@ class TelaEmpresas(ttk.Frame):
     def _reset_form(self):
         self.ent_codigo.delete(0, "end")
         self.ent_nome.delete(0, "end")
+        self.ent_razao.delete(0, "end")
+        self.ent_cnpj.delete(0, "end")
 
         self.simples_var.set("Não")
         self.tipo_operacao_var.set("Interna")
@@ -156,12 +220,6 @@ class TelaEmpresas(ttk.Frame):
         self.btn_salvar.config(state="normal")
         self.btn_editar.config(state="disabled")
 
-    def _limpar(self):  
-        self.ent_codigo.delete(0, "end")
-        self.ent_nome.delete(0, "end")
-
-        self.simples_var.set("Não")
-        self.tipo_operacao_var.set("Interna")
-        self.reducao_base_var.set("Não")
-
+    def _limpar(self):
+        self._reset_form()
         self.tree.selection_remove(self.tree.selection())
