@@ -13,7 +13,8 @@ from config import PLANILHAS
 from ui.log_importacao import TelaLogImportacao
 from services.limpar import limpar_dados_empresa
 from ui.dashboard import Dashboard
-from services.inventario import gerar_inventario, gerar_inventario_pdf
+from services.inventario import gerar_inventario
+from services.blocoH import gerar_bloco_h
 
 
 
@@ -148,6 +149,7 @@ class App(tk.Tk):
             ("📋  Log Importação",              self._show_log),   
             ("📤  Gerar Excel",                 self._gerar_excel),
             ("📦  Gerar Inventário",            self._gerar_inventario), 
+            ("📑  Bloco H",                     self._gerar_blocoH),
 
         ]
 
@@ -348,3 +350,46 @@ class App(tk.Tk):
 
         ttk.Button(win, text="📊 Gerar Excel", command=gerar_excel).pack(pady=8)
         ttk.Button(win, text="📄 Gerar PDF", command=gerar_pdf).pack(pady=8)
+
+    def _gerar_blocoH(self):
+
+        from database.db import get_conn
+        import tkinter as tk
+        from tkinter import ttk, filedialog, messagebox
+
+        with get_conn() as conn:
+            rows = conn.execute(
+                "SELECT codigo, nome FROM empresa ORDER BY codigo"
+            ).fetchall()
+
+        if not rows:
+            messagebox.showwarning("Atenção", "Nenhuma empresa cadastrada.")
+            return
+
+        opcoes = [f"{c} - {n}" for c, n in rows]
+
+        win = tk.Toplevel(self)
+        win.title("Gerar Bloco H")
+        win.geometry("400x200")
+
+        ttk.Label(win, text="Escolha a empresa:").pack(pady=10)
+
+        empresa_var = tk.StringVar()
+        cbo = ttk.Combobox(win, textvariable=empresa_var, values=opcoes, state="readonly", width=45)
+        cbo.pack()
+        cbo.current(0)
+
+        def gerar_excel():
+            codigo = empresa_var.get().split(" - ")[0]
+
+            caminho = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel", "*.xlsx")]
+            )
+
+            if caminho:
+                gerar_bloco_h(codigo, caminho)
+                messagebox.showinfo("Sucesso", "Bloco H Excel gerado!")
+
+        ttk.Button(win, text="📊 Gerar Excel", command=gerar_excel).pack(pady=8)
+       
